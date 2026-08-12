@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.2.2
+AstrBot v4 短视频解析插件 v0.2.3
 """
 from __future__ import annotations
 
@@ -102,14 +102,34 @@ def is_video_deleted_error(error_msg: str) -> bool:
             return True
     return False
 
+# ---- 后端临时错误检测（可重试的错误） ----
+
+BACKEND_TEMPORARY_ERROR_PATTERNS = [
+    r"KeyError", r"videoInfoRes", r"itemList", r"aweme_list",
+    r"ConnectionError", r"Timeout", r"timed out",
+    r"Connection reset", r"Connection refused",
+    r"502", r"503", r"504",
+    r"临时", r"繁忙", r"请稍后",
+]
+
+def is_temporary_backend_error(error_msg: str) -> bool:
+    """判断是否为后端临时错误（可重试）。"""
+    for pattern in BACKEND_TEMPORARY_ERROR_PATTERNS:
+        if re.search(pattern, error_msg, re.IGNORECASE):
+            return True
+    return False
+
 # ---- 默认配置 ----
 
 DEFAULT_PARSER_API_BASE_URL = "http://192.168.5.116:8000"
 DEFAULT_VIDEO_MAX_SIZE_MB = 50
 DEFAULT_TIMEOUT_MS = 15000
+DEFAULT_RETRY_COUNT = 2
+DEFAULT_RETRY_DELAY_MS = 1500
 DEFAULT_UNTITLED_TITLE = "未命名"
 DEFAULT_UNKNOWN_AUTHOR = "未知作者"
 DEFAULT_VIDEO_DELETED_MESSAGE = "该视频已被邪恶势力处理！！！"
+BACKEND_TEMPORARY_MESSAGE = "抖音日常抽风请十分钟后再试。。。。"
 
 IMG_DOWNLOAD_HEADERS = {
     "User-Agent": (
@@ -286,6 +306,12 @@ class VideoParserPlugin(Star):
         self.request_timeout_ms = to_positive_int(
             config.get("request_timeout_ms"), DEFAULT_TIMEOUT_MS
         )
+        self.retry_count = to_positive_int(
+            config.get("retry_count"), DEFAULT_RETRY_COUNT
+        )
+        self.retry_delay_ms = to_positive_int(
+            config.get("retry_delay_ms"), DEFAULT_RETRY_DELAY_MS
+        )
         self.send_cover = bool(config.get("send_cover", True))
         self.processing_message = str(
             config.get("processing_message") or "ikun解析bot正在处理中。。。"
@@ -300,9 +326,10 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.2.2 initialized: "
+            f"video_parser v0.2.3 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
+            f"retry={self.retry_count}x{self.retry_delay_ms}ms "
             f"enabled_platforms({len(enabled_platforms)}): {', '.join(enabled_platforms)}"
         )
 
@@ -354,6 +381,9 @@ class VideoParserPlugin(Star):
         except VideoDeletedError:
             logger.info(f"video_parser video deleted: {share_url}")
             yield event.plain_result(self.video_deleted_message)
+        except BackendTemporaryError as exc:
+            logger.warning(f"video_parser backend temporary error after retries: {share_url}: {exc}")
+            yield event.plain_result(BACKEND_TEMPORARY_MESSAGE)
         except Exception as exc:
             logger.error(f"video_parser error url={share_url}: {exc}\n{traceback.format_exc()}")
             yield event.plain_result(f"解析失败：{exc}")
@@ -453,7 +483,7 @@ class VideoParserPlugin(Star):
         chain.append(Video.fromURL(video_url))
         yield event.chain_result(chain)
 
-    # ---- 核心解析逻辑 ----
+    # ---- 核心解析逻辑（带重试） ----
 
     async def parse_video_share_url(self, share_url: str) -> Dict[str, Any]:
         base_url = self.parser_api_base_url.rstrip("/")
@@ -462,19 +492,51 @@ class VideoParserPlugin(Star):
             f"?url={urllib.parse.quote(share_url, safe='')}"
         )
         loop = asyncio.get_running_loop()
-        payload, _status = await loop.run_in_executor(
-            None, lambda: request_json(full_url, timeout_ms=self.request_timeout_ms)
-        )
-        result = ensure_dict(payload)
-        code = int(result.get("code") or 0)
-        if code != 200:
-            error_msg = str(result.get("msg") or "")
-            if is_video_deleted_error(error_msg):
-                raise VideoDeletedError(
-                    f"video deleted: {error_msg} (code={code})"
+
+        last_error: Optional[Exception] = None
+        max_attempts = self.retry_count + 1  # 1次正常 + N次重试
+
+        for attempt in range(max_attempts):
+            try:
+                payload, _status = await loop.run_in_executor(
+                    None, lambda: request_json(full_url, timeout_ms=self.request_timeout_ms)
                 )
-            raise RuntimeError(f"parser error: {error_msg} ({code})")
-        return ensure_dict(result.get("data"))
+                result = ensure_dict(payload)
+                code = int(result.get("code") or 0)
+                if code != 200:
+                    error_msg = str(result.get("msg") or "")
+                    # 视频已删除，不重试
+                    if is_video_deleted_error(error_msg):
+                        raise VideoDeletedError(
+                            f"video deleted: {error_msg} (code={code})"
+                        )
+                    # 后端临时错误，可重试
+                    if is_temporary_backend_error(error_msg) and attempt < max_attempts - 1:
+                        logger.warning(
+                            f"video_parser backend temporary error (attempt {attempt + 1}/{max_attempts}): "
+                            f"{error_msg}, retrying in {self.retry_delay_ms}ms..."
+                        )
+                        await asyncio.sleep(self.retry_delay_ms / 1000.0)
+                        continue
+                    raise RuntimeError(f"parser error: {error_msg} ({code})")
+                return ensure_dict(result.get("data"))
+            except VideoDeletedError:
+                raise
+            except Exception as exc:
+                last_error = exc
+                if attempt < max_attempts - 1 and is_temporary_backend_error(str(exc)):
+                    logger.warning(
+                        f"video_parser request failed (attempt {attempt + 1}/{max_attempts}): "
+                        f"{exc}, retrying in {self.retry_delay_ms}ms..."
+                    )
+                    await asyncio.sleep(self.retry_delay_ms / 1000.0)
+                    continue
+                raise
+
+        # 所有重试都失败
+        raise BackendTemporaryError(
+            f"all {max_attempts} attempts failed: {last_error}"
+        ) from last_error
 
     async def _get_remote_file_size(self, file_url: str) -> int:
         loop = asyncio.get_running_loop()
@@ -508,4 +570,8 @@ class VideoParserPlugin(Star):
 
 class VideoDeletedError(RuntimeError):
     """视频已被删除的异常。"""
+    pass
+
+class BackendTemporaryError(RuntimeError):
+    """后端临时错误，重试后仍然失败。"""
     pass
