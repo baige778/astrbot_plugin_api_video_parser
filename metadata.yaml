@@ -1,4 +1,4 @@
-name: astrbot_plugin_video_parser
+name: astrbot_plugin_api_video_parser
 description: 解析短视频/图集分享链接并发送直链内容。支持 27 个平台（抖音、TikTok、快手、B站、小红书、微博、西瓜视频、微视、皮皮虾、皮皮搞笑、火山小视频、梨视频、好看视频、虎牙、AcFun、美拍、逗拍、全民K歌、6间房、新片场、Twitter/X、最右、央视网、搜狐视频、腾讯视频、绿洲、度小视），每个平台可独立开关。自动获取视频/图集直链直接发送，视频已删除可自定义提示语。新增「/dy登陆」命令：抖音网页版扫码登录，登录后自动保存 Cookie，解决抖音解析风控问题。
 author: baige778
 version: 0.3.1
@@ -7,4 +7,4 @@ support_platforms:
   - wecom
   - telegram
   - weixin_oc
-repo: https://github.com/baige778/astrbot_plugin_video_parser
+repo: https://github.com/baige778/astrbot_plugin_api_video_parser

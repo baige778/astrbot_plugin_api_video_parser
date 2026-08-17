@@ -92,7 +92,7 @@ AstrBot v4 插件，调用外部解析 API 解析短视频/图集分享链接，
 插件本身零依赖（仅使用 Python 标准库），但需要自行部署视频解析 API 后端：
 
 - [parse-video-py](https://github.com/baige778/parse-video-py) — 通过 HTTP 调用 `/video/share/url/parse` 接口
-- Docker 部署：`docker run -d -p 8000:8000 wujunwei928/parse-video-py`
+- Docker 部署：`git clone https://github.com/baige778/parse-video-py && cd parse-video-py && docker compose up -d`
 - AstrBot v4.x+
 
 ## 📝 使用
