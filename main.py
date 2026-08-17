@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.2.4
+AstrBot v4 短视频解析插件 v0.3.1
 """
 from __future__ import annotations
 
 import asyncio
 import base64
 import json
+import os
 import re
+import time
 import traceback
 import urllib.error
 import urllib.parse
@@ -15,7 +17,7 @@ import urllib.request
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from astrbot.api import AstrBotConfig, logger
-from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.message_components import Image, Plain, Video
 from astrbot.api.star import Context, Star
 
@@ -102,34 +104,21 @@ def is_video_deleted_error(error_msg: str) -> bool:
             return True
     return False
 
-# ---- 后端临时错误检测（可重试的错误） ----
-
-BACKEND_TEMPORARY_ERROR_PATTERNS = [
-    r"KeyError", r"videoInfoRes", r"itemList", r"aweme_list",
-    r"ConnectionError", r"Timeout", r"timed out",
-    r"Connection reset", r"Connection refused",
-    r"502", r"503", r"504",
-    r"临时", r"繁忙", r"请稍后",
-]
-
-def is_temporary_backend_error(error_msg: str) -> bool:
-    """判断是否为后端临时错误（可重试）。"""
-    for pattern in BACKEND_TEMPORARY_ERROR_PATTERNS:
-        if re.search(pattern, error_msg, re.IGNORECASE):
-            return True
-    return False
-
 # ---- 默认配置 ----
 
 DEFAULT_PARSER_API_BASE_URL = "http://192.168.5.116:8000"
 DEFAULT_VIDEO_MAX_SIZE_MB = 50
 DEFAULT_TIMEOUT_MS = 15000
-DEFAULT_RETRY_COUNT = 2
-DEFAULT_RETRY_DELAY_MS = 1500
 DEFAULT_UNTITLED_TITLE = "未命名"
 DEFAULT_UNKNOWN_AUTHOR = "未知作者"
 DEFAULT_VIDEO_DELETED_MESSAGE = "该视频已被邪恶势力处理！！！"
-BACKEND_TEMPORARY_MESSAGE = "抖音日常抽风请十分钟后再试。。。。"
+DEFAULT_LOGIN_POLL_TIMEOUT = 300
+DEFAULT_LOGIN_POLL_INTERVAL = 3
+
+# 抖音登录接口路径（相对 parser_api_base_url）
+DOUYIN_LOGIN_QRCODE_PATH = "/douyin/login/qrcode"
+DOUYIN_LOGIN_STATUS_PATH = "/douyin/login/status"
+DOUYIN_LOGIN_CANCEL_PATH = "/douyin/login/cancel"
 
 IMG_DOWNLOAD_HEADERS = {
     "User-Agent": (
@@ -152,10 +141,17 @@ VIDEO_HEADERS = {
     "Accept-Encoding": "identity",
 }
 
-# 需要防盗链 Referer 的 CDN 域名
+VIDEO_REFERER_HEADERS = {
+    **VIDEO_HEADERS,
+    "Referer": "https://www.douyin.com/",
+}
+
+# 需要防盗链 Referer 的 CDN 域名（抖音系，与后端 web.py 映射保持一致）
 ANTI_LEECH_DOMAINS = {
     "douyinpic.com", "douyinvod.com", "douyin.com",
-    "ixigua.com", "pstatp.com",
+    "iesdouyin.com", "douyinstatic.com", "amemv.com",
+    "zjcdn.com", "pstatp.com", "byteimg.com", "bytecdn.cn",
+    "snssdk.com", "muscdn.com", "ixigua.com",
 }
 
 # ---- 工具函数 ----
@@ -254,14 +250,78 @@ def parse_remote_file_size_from_headers(headers: Mapping[str, str]) -> int | Non
     return None
 
 def build_remote_file_metadata_requests(file_url: str) -> List[urllib.request.Request]:
+    """构造探测远程文件大小的 HEAD/GET 请求，抖音等防盗链 CDN 自动带 Referer。"""
+    headers = VIDEO_REFERER_HEADERS if _needs_referer(file_url) else VIDEO_HEADERS
     return [
-        urllib.request.Request(file_url, headers=VIDEO_HEADERS, method="HEAD"),
+        urllib.request.Request(file_url, headers=headers, method="HEAD"),
         urllib.request.Request(
             file_url,
-            headers={**VIDEO_HEADERS, "Range": "bytes=0-0"},
+            headers={**headers, "Range": "bytes=0-0"},
             method="GET",
         ),
     ]
+
+
+def download_video_to_file(url: str, dest_path: str, timeout_ms: int) -> int:
+    """带防盗链 Referer 流式下载视频到本地文件，返回写入字节数。"""
+    headers = VIDEO_REFERER_HEADERS if _needs_referer(url) else VIDEO_HEADERS
+    req = urllib.request.Request(url, headers=headers)
+    written = 0
+    with urllib.request.urlopen(req, timeout=timeout_ms / 1000.0) as resp:
+        with open(dest_path, "wb") as fh:
+            while True:
+                chunk = resp.read(512 * 1024)
+                if not chunk:
+                    break
+                fh.write(chunk)
+                written += len(chunk)
+    return written
+
+
+def _guess_video_suffix(url: str) -> str:
+    """从 URL 推断视频文件扩展名，失败则回退 .mp4。"""
+    path = urllib.parse.urlparse(url).path
+    suffix = os.path.splitext(path)[1].lower()
+    if suffix and len(suffix) <= 5 and suffix.isascii():
+        return suffix
+    return ".mp4"
+
+
+def _get_video_temp_dir() -> str:
+    """获取视频临时下载目录。必须位于 AstrBot data 挂载内，供 napcat 容器共享访问。"""
+    try:
+        from astrbot.core.utils.astrbot_path import get_astrbot_temp_path
+
+        base = get_astrbot_temp_path()
+    except Exception:
+        base = os.path.join(os.getcwd(), "data", "temp")
+    temp_dir = os.path.join(base, "video_parser")
+    os.makedirs(temp_dir, exist_ok=True)
+    return temp_dir
+
+
+def _cleanup_stale_videos(temp_dir: str, max_age_seconds: int = 3600) -> None:
+    """清理超过 max_age_seconds 的残留临时视频文件（防止崩溃后累积）。"""
+    now = time.time()
+    try:
+        for name in os.listdir(temp_dir):
+            path = os.path.join(temp_dir, name)
+            try:
+                if os.path.isfile(path) and now - os.path.getmtime(path) > max_age_seconds:
+                    os.remove(path)
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
+async def _delayed_remove(path: str, delay: float = 120.0) -> None:
+    """延迟删除临时文件，给 napcat 留出上传时间。"""
+    await asyncio.sleep(delay)
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 def ensure_dict(value: Any) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
@@ -306,12 +366,6 @@ class VideoParserPlugin(Star):
         self.request_timeout_ms = to_positive_int(
             config.get("request_timeout_ms"), DEFAULT_TIMEOUT_MS
         )
-        self.retry_count = to_positive_int(
-            config.get("retry_count"), DEFAULT_RETRY_COUNT
-        )
-        self.retry_delay_ms = to_positive_int(
-            config.get("retry_delay_ms"), DEFAULT_RETRY_DELAY_MS
-        )
         self.send_cover = bool(config.get("send_cover", True))
         self.processing_message = str(
             config.get("processing_message") or "ikun解析bot正在处理中。。。"
@@ -319,6 +373,13 @@ class VideoParserPlugin(Star):
         self.video_deleted_message = str(
             config.get("video_deleted_message") or DEFAULT_VIDEO_DELETED_MESSAGE
         ).strip()
+        self.douyin_login_poll_timeout = to_positive_int(
+            config.get("douyin_login_poll_timeout"), DEFAULT_LOGIN_POLL_TIMEOUT
+        )
+        self.douyin_login_poll_interval = to_positive_int(
+            config.get("douyin_login_poll_interval"), DEFAULT_LOGIN_POLL_INTERVAL
+        )
+        self._active_login_event: Optional[AstrMessageEvent] = None
 
         # 打印已启用的平台
         enabled_platforms = [
@@ -326,10 +387,10 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.2.4 initialized: "
+            f"video_parser v0.3.1 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
-            f"retry={self.retry_count}x{self.retry_delay_ms}ms "
+            f"login_poll_timeout={self.douyin_login_poll_timeout}s "
             f"enabled_platforms({len(enabled_platforms)}): {', '.join(enabled_platforms)}"
         )
 
@@ -381,12 +442,113 @@ class VideoParserPlugin(Star):
         except VideoDeletedError:
             logger.info(f"video_parser video deleted: {share_url}")
             yield event.plain_result(self.video_deleted_message)
-        except BackendTemporaryError as exc:
-            logger.warning(f"video_parser backend temporary error after retries: {share_url}: {exc}")
-            yield event.plain_result(BACKEND_TEMPORARY_MESSAGE)
         except Exception as exc:
             logger.error(f"video_parser error url={share_url}: {exc}\n{traceback.format_exc()}")
             yield event.plain_result(f"解析失败：{exc}")
+
+    # ---- 抖音扫码登录 ----
+
+    @filter.command("dy登陆", alias={"dy登录", "dy扫码", "扫码登录", "抖音登录"})
+    async def dy_login(self, event: AstrMessageEvent):
+        """发起抖音网页版扫码登录，返回二维码并后台自动检测登录状态。"""
+        if self._active_login_event is not None:
+            yield event.plain_result("已有一个登录会话在进行中，请先完成或等待其超时")
+            return
+
+        qrcode_url = self.parser_api_base_url + DOUYIN_LOGIN_QRCODE_PATH
+        loop = asyncio.get_running_loop()
+        try:
+            payload, status_code = await loop.run_in_executor(
+                None, lambda: request_json(qrcode_url, timeout_ms=self.request_timeout_ms)
+            )
+        except Exception as exc:
+            logger.error(f"video_parser douyin login qrcode request failed: {exc}")
+            yield event.plain_result(f"获取登录二维码失败：{exc}")
+            return
+
+        result = ensure_dict(payload)
+        code = to_positive_int(result.get("code"), -1)
+        if code != 200 or status_code != 200:
+            msg = str(result.get("msg") or "").strip() or f"HTTP {status_code}"
+            yield event.plain_result(f"获取登录二维码失败：{msg}")
+            return
+
+        data = ensure_dict(result.get("data"))
+        qr_base64 = str(data.get("qrcode_base64") or "").strip()
+        expires_in = to_positive_int(data.get("expires_in"), self.douyin_login_poll_timeout)
+
+        if not qr_base64:
+            yield event.plain_result("获取登录二维码失败：返回内容为空")
+            return
+
+        self._active_login_event = event
+        # 先启动后台轮询任务，再发送二维码（避免框架提前停止迭代导致轮询未启动）
+        asyncio.create_task(self._poll_douyin_login(event))
+        try:
+            yield event.chain_result([
+                Image.fromBase64(qr_base64),
+                Plain(
+                    f"\n请用抖音 APP 扫码登录（{expires_in} 秒内有效）\n"
+                    f"扫码成功后我会自动检测并通知你"
+                ),
+            ])
+        except Exception as exc:
+            logger.warning(f"video_parser send qrcode image failed: {exc}")
+            self._active_login_event = None
+            yield event.plain_result(f"二维码已生成，但发送图片失败：{exc}")
+            return
+
+    async def _poll_douyin_login(self, event: AstrMessageEvent):
+        """后台轮询抖音登录状态，成功后主动推送结果。"""
+        deadline = time.monotonic() + self.douyin_login_poll_timeout
+        status_url = self.parser_api_base_url + DOUYIN_LOGIN_STATUS_PATH
+        loop = asyncio.get_running_loop()
+        last_state = ""
+
+        try:
+            while time.monotonic() < deadline:
+                await asyncio.sleep(self.douyin_login_poll_interval)
+                try:
+                    payload, _status_code = await loop.run_in_executor(
+                        None, lambda: request_json(status_url, timeout_ms=self.request_timeout_ms)
+                    )
+                except Exception as exc:
+                    logger.warning(f"video_parser douyin login status poll failed: {exc}")
+                    continue
+
+                data = ensure_dict(ensure_dict(payload).get("data"))
+                state = str(data.get("status") or "")
+                if state and state != last_state:
+                    logger.info(f"video_parser douyin login state: {state}")
+                    last_state = state
+
+                if state == "success":
+                    await self._safe_send(
+                        event,
+                        "✅ 抖音登录成功！Cookie 已保存，现在可以正常解析抖音视频/图集了",
+                    )
+                    return
+                if state in ("expired", "cancelled", "failed"):
+                    if state == "expired":
+                        await self._safe_send(event, "⏰ 登录二维码已过期，请重新发送 /dy登陆")
+                    elif state == "cancelled":
+                        await self._safe_send(event, "登录已取消")
+                    else:
+                        err = str(data.get("error") or "").strip()
+                        await self._safe_send(event, f"❌ 抖音登录失败：{err or state}")
+                    return
+
+            await self._safe_send(event, "⏰ 登录超时，请重新发送 /dy登陆")
+        finally:
+            if self._active_login_event is event:
+                self._active_login_event = None
+
+    async def _safe_send(self, event: AstrMessageEvent, text: str):
+        """主动推送一条文本消息，失败时仅记录日志不抛出。"""
+        try:
+            await event.send(MessageChain([Plain(text)]))
+        except Exception as exc:
+            logger.error(f"video_parser douyin login push failed: {exc}")
 
     # ---- 图集处理 ----
 
@@ -472,6 +634,31 @@ class VideoParserPlugin(Star):
             )
             return
 
+        # 带 Referer 下载视频到本地临时文件，避免 napcat 直连抖音 CDN 触发 403 防盗链
+        loop = asyncio.get_running_loop()
+        temp_dir = _get_video_temp_dir()
+        _cleanup_stale_videos(temp_dir)
+        tmp_path = os.path.join(
+            temp_dir, f"vp_{int(time.time())}_{os.getpid()}{_guess_video_suffix(video_url)}"
+        )
+        try:
+            downloaded = await loop.run_in_executor(
+                None,
+                lambda: download_video_to_file(
+                    video_url, tmp_path, self.request_timeout_ms
+                ),
+            )
+            if downloaded <= 0:
+                raise RuntimeError("下载到 0 字节")
+        except Exception as exc:
+            logger.warning(f"video_parser video download failed: {exc}")
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            yield event.plain_result("视频下载失败，无法直接发送，请尝试点击源链接观看。")
+            return
+
         chain: List[Any] = []
         title = str(data.get("title") or "").strip()
         author = str(ensure_dict(data.get("author")).get("name") or "").strip()
@@ -480,10 +667,13 @@ class VideoParserPlugin(Star):
                 f"\n标题: {empty_fallback(title, DEFAULT_UNTITLED_TITLE)}"
                 f"\n作者: {empty_fallback(author, DEFAULT_UNKNOWN_AUTHOR)}"
             ))
-        chain.append(Video.fromURL(video_url))
+        chain.append(Video.fromFileSystem(tmp_path))
         yield event.chain_result(chain)
 
-    # ---- 核心解析逻辑（带重试） ----
+        # 延迟清理临时文件，给 napcat 留出上传时间
+        asyncio.create_task(_delayed_remove(tmp_path))
+
+    # ---- 核心解析逻辑 ----
 
     async def parse_video_share_url(self, share_url: str) -> Dict[str, Any]:
         base_url = self.parser_api_base_url.rstrip("/")
@@ -492,51 +682,19 @@ class VideoParserPlugin(Star):
             f"?url={urllib.parse.quote(share_url, safe='')}"
         )
         loop = asyncio.get_running_loop()
-
-        last_error: Optional[Exception] = None
-        max_attempts = self.retry_count + 1  # 1次正常 + N次重试
-
-        for attempt in range(max_attempts):
-            try:
-                payload, _status = await loop.run_in_executor(
-                    None, lambda: request_json(full_url, timeout_ms=self.request_timeout_ms)
+        payload, _status = await loop.run_in_executor(
+            None, lambda: request_json(full_url, timeout_ms=self.request_timeout_ms)
+        )
+        result = ensure_dict(payload)
+        code = int(result.get("code") or 0)
+        if code != 200:
+            error_msg = str(result.get("msg") or "")
+            if is_video_deleted_error(error_msg):
+                raise VideoDeletedError(
+                    f"video deleted: {error_msg} (code={code})"
                 )
-                result = ensure_dict(payload)
-                code = int(result.get("code") or 0)
-                if code != 200:
-                    error_msg = str(result.get("msg") or "")
-                    # 视频已删除，不重试
-                    if is_video_deleted_error(error_msg):
-                        raise VideoDeletedError(
-                            f"video deleted: {error_msg} (code={code})"
-                        )
-                    # 后端临时错误，可重试
-                    if is_temporary_backend_error(error_msg) and attempt < max_attempts - 1:
-                        logger.warning(
-                            f"video_parser backend temporary error (attempt {attempt + 1}/{max_attempts}): "
-                            f"{error_msg}, retrying in {self.retry_delay_ms}ms..."
-                        )
-                        await asyncio.sleep(self.retry_delay_ms / 1000.0)
-                        continue
-                    raise RuntimeError(f"parser error: {error_msg} ({code})")
-                return ensure_dict(result.get("data"))
-            except VideoDeletedError:
-                raise
-            except Exception as exc:
-                last_error = exc
-                if attempt < max_attempts - 1 and is_temporary_backend_error(str(exc)):
-                    logger.warning(
-                        f"video_parser request failed (attempt {attempt + 1}/{max_attempts}): "
-                        f"{exc}, retrying in {self.retry_delay_ms}ms..."
-                    )
-                    await asyncio.sleep(self.retry_delay_ms / 1000.0)
-                    continue
-                raise
-
-        # 所有重试都失败
-        raise BackendTemporaryError(
-            f"all {max_attempts} attempts failed: {last_error}"
-        ) from last_error
+            raise RuntimeError(f"parser error: {error_msg} ({code})")
+        return ensure_dict(result.get("data"))
 
     async def _get_remote_file_size(self, file_url: str) -> int:
         loop = asyncio.get_running_loop()
@@ -570,8 +728,4 @@ class VideoParserPlugin(Star):
 
 class VideoDeletedError(RuntimeError):
     """视频已被删除的异常。"""
-    pass
-
-class BackendTemporaryError(RuntimeError):
-    """后端临时错误，重试后仍然失败。"""
     pass

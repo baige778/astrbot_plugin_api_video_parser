@@ -23,18 +23,6 @@
     "hint": "是否在发送视频的同时附带封面图片。",
     "default": true
   },
-  "retry_count": {
-    "type": "int",
-    "description": "后端临时错误重试次数",
-    "hint": "遇到后端临时错误(KeyError/连接超时等)时的重试次数。",
-    "default": 2
-  },
-  "retry_delay_ms": {
-    "type": "int",
-    "description": "重试间隔 (毫秒)",
-    "hint": "两次重试之间的等待时间。",
-    "default": 1500
-  },
   "processing_message": {
     "type": "string",
     "description": "处理中提示语",
@@ -46,6 +34,18 @@
     "description": "视频已删除提示语",
     "hint": "当解析的视频已被删除/下架时，发送的提示文字。",
     "default": "该视频已被邪恶势力处理！！！"
+  },
+  "douyin_login_poll_timeout": {
+    "type": "int",
+    "description": "抖音登录轮询超时 (秒)",
+    "hint": "扫码登录后后台检测登录状态的超时时间，需与后端 DOUYIN_LOGIN_TIMEOUT 保持一致。",
+    "default": 300
+  },
+  "douyin_login_poll_interval": {
+    "type": "int",
+    "description": "抖音登录轮询间隔 (秒)",
+    "hint": "后台检测登录状态的间隔，不建议过小以免频繁请求后端。",
+    "default": 3
   },
   "platform_douyin": {
     "type": "bool",
