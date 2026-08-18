@@ -47,6 +47,18 @@
     "hint": "当解析的视频已被删除/下架时发送的提示文字，内容可自定义。是否发送由「发送视频已删除提示」开关控制。",
     "default": "该视频已被邪恶势力处理！！！"
   },
+  "untitled_title": {
+    "type": "string",
+    "description": "无标题时的回退文案",
+    "hint": "当解析结果没有标题时，显示的标题占位文案，内容可自定义。",
+    "default": "未命名"
+  },
+  "unknown_author": {
+    "type": "string",
+    "description": "无作者时的回退文案",
+    "hint": "当解析结果没有作者时，显示的作者占位文案，内容可自定义。",
+    "default": "未知作者"
+  },
   "douyin_login_poll_timeout": {
     "type": "int",
     "description": "抖音登录轮询超时 (秒)",
