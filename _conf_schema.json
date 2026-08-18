@@ -47,17 +47,17 @@
     "default": "该视频已被邪恶势力处理！！！",
     "hint": "当解析的视频已被删除/下架时发送的提示文字，内容可自定义。是否发送由「发送视频已删除提示」开关控制。"
   },
-  "video_sending_message": {
-    "type": "string",
-    "description": "视频发送中提示语",
-    "default": "视频解析成功，正在发送视频...",
-    "hint": "视频解析成功后、发送前显示的提示文字，内容可自定义。"
-  },
   "send_video_sending_message": {
     "type": "bool",
     "description": "发送视频发送中提示",
     "hint": "是否在视频解析成功后、发送前显示提示语。",
     "default": true
+  },
+  "video_sending_message": {
+    "type": "string",
+    "description": "视频发送中提示语",
+    "default": "视频解析成功，正在发送视频...",
+    "hint": "视频解析成功后、发送前显示的提示文字，内容可自定义。"
   },
   "douyin_login_poll_timeout": {
     "type": "int",
