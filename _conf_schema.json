@@ -59,12 +59,12 @@
   "send_video_sending_message": {
     "type": "bool",
     "description": "发送视频发送中提示",
-    "default": true
+    "default": false
   },
   "send_empty_result_message": {
     "type": "bool",
     "description": "发送空结果提示",
-    "default": true
+    "default": false
   },
   "empty_result_message": {
     "type": "string",
@@ -75,7 +75,7 @@
   "send_parse_fail_message": {
     "type": "bool",
     "description": "发送解析失败提示",
-    "default": true
+    "default": false
   },
   "parse_fail_message": {
     "type": "string",
@@ -86,7 +86,7 @@
   "send_size_fail_message": {
     "type": "bool",
     "description": "发送视频大小获取失败提示",
-    "default": true
+    "default": false
   },
   "size_fail_message": {
     "type": "string",
@@ -97,7 +97,7 @@
   "send_size_exceeded_message": {
     "type": "bool",
     "description": "发送视频大小超限提示",
-    "default": true
+    "default": false
   },
   "size_exceeded_message": {
     "type": "string",
@@ -108,7 +108,7 @@
   "send_download_fail_message": {
     "type": "bool",
     "description": "发送视频下载失败提示",
-    "default": true
+    "default": false
   },
   "download_fail_message": {
     "type": "string",
@@ -119,7 +119,7 @@
   "send_album_summary_message": {
     "type": "bool",
     "description": "发送图集摘要提示",
-    "default": true
+    "default": false
   },
   "album_summary_message": {
     "type": "string",
@@ -130,7 +130,7 @@
   "send_image_fail_message": {
     "type": "bool",
     "description": "发送单张图片发送失败提示",
-    "default": true
+    "default": false
   },
   "image_fail_message": {
     "type": "string",
@@ -141,7 +141,7 @@
   "send_album_all_fail_message": {
     "type": "bool",
     "description": "发送图集全部图片发送失败提示",
-    "default": true
+    "default": false
   },
   "album_all_fail_message": {
     "type": "string",
@@ -152,7 +152,7 @@
   "send_login_busy_message": {
     "type": "bool",
     "description": "发送登录会话冲突提示",
-    "default": true
+    "default": false
   },
   "login_busy_message": {
     "type": "string",
@@ -163,7 +163,7 @@
   "send_login_qrcode_fail_message": {
     "type": "bool",
     "description": "发送二维码获取失败提示",
-    "default": true
+    "default": false
   },
   "login_qrcode_fail_message": {
     "type": "string",
@@ -174,7 +174,7 @@
   "send_login_qrcode_caption": {
     "type": "bool",
     "description": "发送二维码扫码提示文案",
-    "default": true
+    "default": false
   },
   "login_qrcode_caption": {
     "type": "string",
@@ -185,7 +185,7 @@
   "send_login_qrcode_send_fail_message": {
     "type": "bool",
     "description": "发送二维码图片发送失败提示",
-    "default": true
+    "default": false
   },
   "login_qrcode_send_fail_message": {
     "type": "string",
@@ -196,7 +196,7 @@
   "send_login_success_message": {
     "type": "bool",
     "description": "发送登录成功提示",
-    "default": true
+    "default": false
   },
   "login_success_message": {
     "type": "string",
@@ -207,7 +207,7 @@
   "send_login_expired_message": {
     "type": "bool",
     "description": "发送二维码过期提示",
-    "default": true
+    "default": false
   },
   "login_expired_message": {
     "type": "string",
@@ -218,7 +218,7 @@
   "send_login_cancelled_message": {
     "type": "bool",
     "description": "发送登录取消提示",
-    "default": true
+    "default": false
   },
   "login_cancelled_message": {
     "type": "string",
@@ -229,7 +229,7 @@
   "send_login_failed_message": {
     "type": "bool",
     "description": "发送登录失败提示",
-    "default": true
+    "default": false
   },
   "login_failed_message": {
     "type": "string",
@@ -240,7 +240,7 @@
   "send_login_timeout_message": {
     "type": "bool",
     "description": "发送登录超时提示",
-    "default": true
+    "default": false
   },
   "login_timeout_message": {
     "type": "string",

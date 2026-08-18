@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.8
+AstrBot v4 短视频解析插件 v0.3.9
 """
 from __future__ import annotations
 
@@ -412,42 +412,42 @@ class VideoParserPlugin(Star):
         )
 
         # ---- 视频/图集提示语 ----
-        self.send_video_sending_message = bool(config.get("send_video_sending_message", True))
-        self.send_empty_result_message = bool(config.get("send_empty_result_message", True))
+        self.send_video_sending_message = bool(config.get("send_video_sending_message", False))
+        self.send_empty_result_message = bool(config.get("send_empty_result_message", False))
         self.empty_result_message = str(config.get("empty_result_message") or DEFAULT_EMPTY_RESULT_MESSAGE).strip()
-        self.send_parse_fail_message = bool(config.get("send_parse_fail_message", True))
+        self.send_parse_fail_message = bool(config.get("send_parse_fail_message", False))
         self.parse_fail_message = str(config.get("parse_fail_message") or DEFAULT_PARSE_FAIL_MESSAGE).strip()
-        self.send_size_fail_message = bool(config.get("send_size_fail_message", True))
+        self.send_size_fail_message = bool(config.get("send_size_fail_message", False))
         self.size_fail_message = str(config.get("size_fail_message") or DEFAULT_SIZE_FAIL_MESSAGE).strip()
-        self.send_size_exceeded_message = bool(config.get("send_size_exceeded_message", True))
+        self.send_size_exceeded_message = bool(config.get("send_size_exceeded_message", False))
         self.size_exceeded_message = str(config.get("size_exceeded_message") or DEFAULT_SIZE_EXCEEDED_MESSAGE).strip()
-        self.send_download_fail_message = bool(config.get("send_download_fail_message", True))
+        self.send_download_fail_message = bool(config.get("send_download_fail_message", False))
         self.download_fail_message = str(config.get("download_fail_message") or DEFAULT_DOWNLOAD_FAIL_MESSAGE).strip()
-        self.send_album_summary_message = bool(config.get("send_album_summary_message", True))
+        self.send_album_summary_message = bool(config.get("send_album_summary_message", False))
         self.album_summary_message = str(config.get("album_summary_message") or DEFAULT_ALBUM_SUMMARY_MESSAGE).strip()
-        self.send_image_fail_message = bool(config.get("send_image_fail_message", True))
+        self.send_image_fail_message = bool(config.get("send_image_fail_message", False))
         self.image_fail_message = str(config.get("image_fail_message") or DEFAULT_IMAGE_FAIL_MESSAGE).strip()
-        self.send_album_all_fail_message = bool(config.get("send_album_all_fail_message", True))
+        self.send_album_all_fail_message = bool(config.get("send_album_all_fail_message", False))
         self.album_all_fail_message = str(config.get("album_all_fail_message") or DEFAULT_ALBUM_ALL_FAIL_MESSAGE).strip()
 
         # ---- 抖音登录提示语 ----
-        self.send_login_busy_message = bool(config.get("send_login_busy_message", True))
+        self.send_login_busy_message = bool(config.get("send_login_busy_message", False))
         self.login_busy_message = str(config.get("login_busy_message") or DEFAULT_LOGIN_BUSY_MESSAGE).strip()
-        self.send_login_qrcode_fail_message = bool(config.get("send_login_qrcode_fail_message", True))
+        self.send_login_qrcode_fail_message = bool(config.get("send_login_qrcode_fail_message", False))
         self.login_qrcode_fail_message = str(config.get("login_qrcode_fail_message") or DEFAULT_LOGIN_QRCODE_FAIL_MESSAGE).strip()
-        self.send_login_qrcode_caption = bool(config.get("send_login_qrcode_caption", True))
+        self.send_login_qrcode_caption = bool(config.get("send_login_qrcode_caption", False))
         self.login_qrcode_caption = str(config.get("login_qrcode_caption") or DEFAULT_LOGIN_QRCODE_CAPTION).strip()
-        self.send_login_qrcode_send_fail_message = bool(config.get("send_login_qrcode_send_fail_message", True))
+        self.send_login_qrcode_send_fail_message = bool(config.get("send_login_qrcode_send_fail_message", False))
         self.login_qrcode_send_fail_message = str(config.get("login_qrcode_send_fail_message") or DEFAULT_LOGIN_QRCODE_SEND_FAIL_MESSAGE).strip()
-        self.send_login_success_message = bool(config.get("send_login_success_message", True))
+        self.send_login_success_message = bool(config.get("send_login_success_message", False))
         self.login_success_message = str(config.get("login_success_message") or DEFAULT_LOGIN_SUCCESS_MESSAGE).strip()
-        self.send_login_expired_message = bool(config.get("send_login_expired_message", True))
+        self.send_login_expired_message = bool(config.get("send_login_expired_message", False))
         self.login_expired_message = str(config.get("login_expired_message") or DEFAULT_LOGIN_EXPIRED_MESSAGE).strip()
-        self.send_login_cancelled_message = bool(config.get("send_login_cancelled_message", True))
+        self.send_login_cancelled_message = bool(config.get("send_login_cancelled_message", False))
         self.login_cancelled_message = str(config.get("login_cancelled_message") or DEFAULT_LOGIN_CANCELLED_MESSAGE).strip()
-        self.send_login_failed_message = bool(config.get("send_login_failed_message", True))
+        self.send_login_failed_message = bool(config.get("send_login_failed_message", False))
         self.login_failed_message = str(config.get("login_failed_message") or DEFAULT_LOGIN_FAILED_MESSAGE).strip()
-        self.send_login_timeout_message = bool(config.get("send_login_timeout_message", True))
+        self.send_login_timeout_message = bool(config.get("send_login_timeout_message", False))
         self.login_timeout_message = str(config.get("login_timeout_message") or DEFAULT_LOGIN_TIMEOUT_MESSAGE).strip()
 
         self._active_login_event: Optional[AstrMessageEvent] = None
@@ -458,7 +458,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.8 initialized: "
+            f"video_parser v0.3.9 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
