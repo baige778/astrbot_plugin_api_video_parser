@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.4
+AstrBot v4 短视频解析插件 v0.3.5
 """
 from __future__ import annotations
 
@@ -112,6 +112,8 @@ DEFAULT_TIMEOUT_MS = 15000
 DEFAULT_UNTITLED_TITLE = "未命名"
 DEFAULT_UNKNOWN_AUTHOR = "未知作者"
 DEFAULT_VIDEO_DELETED_MESSAGE = "该视频已被邪恶势力处理！！！"
+DEFAULT_VIDEO_SENDING_MESSAGE = "视频解析成功，正在发送视频..."
+DEFAULT_DOUYIN_VIDEO_SENDING_MESSAGE = "抖音视频解析成功，正在直接发送..."
 DEFAULT_LOGIN_POLL_TIMEOUT = 300
 DEFAULT_LOGIN_POLL_INTERVAL = 3
 
@@ -375,12 +377,13 @@ class VideoParserPlugin(Star):
         self.video_deleted_message = str(
             config.get("video_deleted_message") or DEFAULT_VIDEO_DELETED_MESSAGE
         ).strip()
-        self.untitled_title = str(
-            config.get("untitled_title") or DEFAULT_UNTITLED_TITLE
-        ).strip() or DEFAULT_UNTITLED_TITLE
-        self.unknown_author = str(
-            config.get("unknown_author") or DEFAULT_UNKNOWN_AUTHOR
-        ).strip() or DEFAULT_UNKNOWN_AUTHOR
+        self.video_sending_message = str(
+            config.get("video_sending_message") or DEFAULT_VIDEO_SENDING_MESSAGE
+        ).strip() or DEFAULT_VIDEO_SENDING_MESSAGE
+        self.douyin_video_sending_message = str(
+            config.get("douyin_video_sending_message")
+            or DEFAULT_DOUYIN_VIDEO_SENDING_MESSAGE
+        ).strip() or DEFAULT_DOUYIN_VIDEO_SENDING_MESSAGE
         self.douyin_login_poll_timeout = to_positive_int(
             config.get("douyin_login_poll_timeout"), DEFAULT_LOGIN_POLL_TIMEOUT
         )
@@ -395,7 +398,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.4 initialized: "
+            f"video_parser v0.3.5 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
@@ -569,9 +572,9 @@ class VideoParserPlugin(Star):
 
         summary = f"图集解析成功！共 {total} 张图片"
         if title:
-            summary += f"\n标题: {empty_fallback(title, self.untitled_title)}"
+            summary += f"\n标题: {empty_fallback(title, DEFAULT_UNTITLED_TITLE)}"
         if author:
-            summary += f"\n作者: {empty_fallback(author, self.unknown_author)}"
+            summary += f"\n作者: {empty_fallback(author, DEFAULT_UNKNOWN_AUTHOR)}"
 
         logger.info(f"video_parser album: {total} images, title={title[:30] if title else 'N/A'}")
         yield event.plain_result(summary)
@@ -607,7 +610,7 @@ class VideoParserPlugin(Star):
     async def _handle_video(
         self, event: AstrMessageEvent, data: Dict[str, Any], *, direct: bool
     ):
-        tip = "抖音视频解析成功，正在直接发送..." if direct else "视频解析成功，正在发送视频..."
+        tip = self.douyin_video_sending_message if direct else self.video_sending_message
         yield event.plain_result(tip)
 
         video_url = str(data.get("video_url") or "").strip()
@@ -673,8 +676,8 @@ class VideoParserPlugin(Star):
         author = str(ensure_dict(data.get("author")).get("name") or "").strip()
         if title or author:
             chain.append(Plain(
-                f"\n标题: {empty_fallback(title, self.untitled_title)}"
-                f"\n作者: {empty_fallback(author, self.unknown_author)}"
+                f"\n标题: {empty_fallback(title, DEFAULT_UNTITLED_TITLE)}"
+                f"\n作者: {empty_fallback(author, DEFAULT_UNKNOWN_AUTHOR)}"
             ))
         chain.append(Video.fromFileSystem(tmp_path))
         yield event.chain_result(chain)

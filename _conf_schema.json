@@ -47,17 +47,17 @@
     "hint": "当解析的视频已被删除/下架时发送的提示文字，内容可自定义。是否发送由「发送视频已删除提示」开关控制。",
     "default": "该视频已被邪恶势力处理！！！"
   },
-  "untitled_title": {
+  "video_sending_message": {
     "type": "string",
-    "description": "无标题时的回退文案",
-    "hint": "当解析结果没有标题时，显示的标题占位文案，内容可自定义。",
-    "default": "未命名"
+    "description": "视频发送中提示语",
+    "hint": "视频解析成功后、发送前显示的提示文字，内容可自定义。",
+    "default": "视频解析成功，正在发送视频..."
   },
-  "unknown_author": {
+  "douyin_video_sending_message": {
     "type": "string",
-    "description": "无作者时的回退文案",
-    "hint": "当解析结果没有作者时，显示的作者占位文案，内容可自定义。",
-    "default": "未知作者"
+    "description": "抖音视频发送中提示语",
+    "hint": "抖音视频解析成功后、直接发送前显示的提示文字，内容可自定义。",
+    "default": "抖音视频解析成功，正在直接发送..."
   },
   "douyin_login_poll_timeout": {
     "type": "int",
