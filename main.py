@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.9
+AstrBot v4 短视频解析插件 v0.3.10
 """
 from __future__ import annotations
 
@@ -115,25 +115,6 @@ DEFAULT_VIDEO_DELETED_MESSAGE = "该视频已被邪恶势力处理！！！"
 DEFAULT_VIDEO_SENDING_MESSAGE = "视频解析成功，正在发送视频..."
 DEFAULT_LOGIN_POLL_TIMEOUT = 300
 DEFAULT_LOGIN_POLL_INTERVAL = 3
-
-# ---- 提示语默认值 ----
-DEFAULT_EMPTY_RESULT_MESSAGE = "解析成功，但链接内容好像既不是视频也不是图集呢"
-DEFAULT_PARSE_FAIL_MESSAGE = "解析失败：{error}"
-DEFAULT_SIZE_FAIL_MESSAGE = "获取视频大小失败，无法直接发送，请尝试点击源链接观看。"
-DEFAULT_SIZE_EXCEEDED_MESSAGE = "视频大小为 {file_size}MB，超过 {max_size}MB 限制，请尝试点击源链接观看。"
-DEFAULT_DOWNLOAD_FAIL_MESSAGE = "视频下载失败，无法直接发送，请尝试点击源链接观看。"
-DEFAULT_ALBUM_SUMMARY_MESSAGE = "图集解析成功！共 {total} 张图片"
-DEFAULT_IMAGE_FAIL_MESSAGE = "第 {index} 张图片发送失败"
-DEFAULT_ALBUM_ALL_FAIL_MESSAGE = "图集解析成功，但所有图片发送失败"
-DEFAULT_LOGIN_BUSY_MESSAGE = "已有一个登录会话在进行中，请先完成或等待其超时"
-DEFAULT_LOGIN_QRCODE_FAIL_MESSAGE = "获取登录二维码失败：{error}"
-DEFAULT_LOGIN_QRCODE_CAPTION = "\n请用抖音 APP 扫码登录（{expires_in} 秒内有效）\n扫码成功后我会自动检测并通知你"
-DEFAULT_LOGIN_QRCODE_SEND_FAIL_MESSAGE = "二维码已生成，但发送图片失败：{error}"
-DEFAULT_LOGIN_SUCCESS_MESSAGE = "✅ 抖音登录成功！Cookie 已保存，现在可以正常解析抖音视频/图集了"
-DEFAULT_LOGIN_EXPIRED_MESSAGE = "⏰ 登录二维码已过期，请重新发送 /dy登陆"
-DEFAULT_LOGIN_CANCELLED_MESSAGE = "登录已取消"
-DEFAULT_LOGIN_FAILED_MESSAGE = "❌ 抖音登录失败：{error}"
-DEFAULT_LOGIN_TIMEOUT_MESSAGE = "⏰ 登录超时，请重新发送 /dy登陆"
 
 # 抖音登录接口路径（相对 parser_api_base_url）
 DOUYIN_LOGIN_QRCODE_PATH = "/douyin/login/qrcode"
@@ -361,12 +342,6 @@ def to_positive_int(value: Any, default: int) -> int:
 def empty_fallback(value: str, fallback: str) -> str:
     return value if value.strip() else fallback
 
-def format_message(template: str, **kwargs: Any) -> str:
-    """安全替换提示语中的占位符（如 {error}/{total}），缺失或多余占位符不报错。"""
-    for key, value in kwargs.items():
-        template = template.replace("{" + key + "}", str(value))
-    return template
-
 def _pick_first_str(data: Dict[str, Any], *keys: str) -> Optional[str]:
     for key in keys:
         value = data.get(key)
@@ -395,6 +370,7 @@ class VideoParserPlugin(Star):
         self.send_cover = bool(config.get("send_cover", True))
         self.send_processing_message = bool(config.get("send_processing_message", True))
         self.send_video_deleted_message = bool(config.get("send_video_deleted_message", True))
+        self.send_video_sending_message = bool(config.get("send_video_sending_message", True))
         self.processing_message = str(
             config.get("processing_message") or "ikun解析bot正在处理中。。。"
         ).strip()
@@ -410,46 +386,6 @@ class VideoParserPlugin(Star):
         self.douyin_login_poll_interval = to_positive_int(
             config.get("douyin_login_poll_interval"), DEFAULT_LOGIN_POLL_INTERVAL
         )
-
-        # ---- 视频/图集提示语 ----
-        self.send_video_sending_message = bool(config.get("send_video_sending_message", False))
-        self.send_empty_result_message = bool(config.get("send_empty_result_message", False))
-        self.empty_result_message = str(config.get("empty_result_message") or DEFAULT_EMPTY_RESULT_MESSAGE).strip()
-        self.send_parse_fail_message = bool(config.get("send_parse_fail_message", False))
-        self.parse_fail_message = str(config.get("parse_fail_message") or DEFAULT_PARSE_FAIL_MESSAGE).strip()
-        self.send_size_fail_message = bool(config.get("send_size_fail_message", False))
-        self.size_fail_message = str(config.get("size_fail_message") or DEFAULT_SIZE_FAIL_MESSAGE).strip()
-        self.send_size_exceeded_message = bool(config.get("send_size_exceeded_message", False))
-        self.size_exceeded_message = str(config.get("size_exceeded_message") or DEFAULT_SIZE_EXCEEDED_MESSAGE).strip()
-        self.send_download_fail_message = bool(config.get("send_download_fail_message", False))
-        self.download_fail_message = str(config.get("download_fail_message") or DEFAULT_DOWNLOAD_FAIL_MESSAGE).strip()
-        self.send_album_summary_message = bool(config.get("send_album_summary_message", False))
-        self.album_summary_message = str(config.get("album_summary_message") or DEFAULT_ALBUM_SUMMARY_MESSAGE).strip()
-        self.send_image_fail_message = bool(config.get("send_image_fail_message", False))
-        self.image_fail_message = str(config.get("image_fail_message") or DEFAULT_IMAGE_FAIL_MESSAGE).strip()
-        self.send_album_all_fail_message = bool(config.get("send_album_all_fail_message", False))
-        self.album_all_fail_message = str(config.get("album_all_fail_message") or DEFAULT_ALBUM_ALL_FAIL_MESSAGE).strip()
-
-        # ---- 抖音登录提示语 ----
-        self.send_login_busy_message = bool(config.get("send_login_busy_message", False))
-        self.login_busy_message = str(config.get("login_busy_message") or DEFAULT_LOGIN_BUSY_MESSAGE).strip()
-        self.send_login_qrcode_fail_message = bool(config.get("send_login_qrcode_fail_message", False))
-        self.login_qrcode_fail_message = str(config.get("login_qrcode_fail_message") or DEFAULT_LOGIN_QRCODE_FAIL_MESSAGE).strip()
-        self.send_login_qrcode_caption = bool(config.get("send_login_qrcode_caption", False))
-        self.login_qrcode_caption = str(config.get("login_qrcode_caption") or DEFAULT_LOGIN_QRCODE_CAPTION).strip()
-        self.send_login_qrcode_send_fail_message = bool(config.get("send_login_qrcode_send_fail_message", False))
-        self.login_qrcode_send_fail_message = str(config.get("login_qrcode_send_fail_message") or DEFAULT_LOGIN_QRCODE_SEND_FAIL_MESSAGE).strip()
-        self.send_login_success_message = bool(config.get("send_login_success_message", False))
-        self.login_success_message = str(config.get("login_success_message") or DEFAULT_LOGIN_SUCCESS_MESSAGE).strip()
-        self.send_login_expired_message = bool(config.get("send_login_expired_message", False))
-        self.login_expired_message = str(config.get("login_expired_message") or DEFAULT_LOGIN_EXPIRED_MESSAGE).strip()
-        self.send_login_cancelled_message = bool(config.get("send_login_cancelled_message", False))
-        self.login_cancelled_message = str(config.get("login_cancelled_message") or DEFAULT_LOGIN_CANCELLED_MESSAGE).strip()
-        self.send_login_failed_message = bool(config.get("send_login_failed_message", False))
-        self.login_failed_message = str(config.get("login_failed_message") or DEFAULT_LOGIN_FAILED_MESSAGE).strip()
-        self.send_login_timeout_message = bool(config.get("send_login_timeout_message", False))
-        self.login_timeout_message = str(config.get("login_timeout_message") or DEFAULT_LOGIN_TIMEOUT_MESSAGE).strip()
-
         self._active_login_event: Optional[AstrMessageEvent] = None
 
         # 打印已启用的平台
@@ -458,7 +394,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.9 initialized: "
+            f"video_parser v0.3.10 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
@@ -504,8 +440,7 @@ class VideoParserPlugin(Star):
                     yield result
                 return
 
-            if self.send_empty_result_message:
-                yield event.plain_result(self.empty_result_message)
+            yield event.plain_result("解析成功，但链接内容好像既不是视频也不是图集呢")
 
         except VideoDeletedError:
             logger.info(f"video_parser video deleted: {share_url}")
@@ -513,8 +448,7 @@ class VideoParserPlugin(Star):
                 yield event.plain_result(self.video_deleted_message)
         except Exception as exc:
             logger.error(f"video_parser error url={share_url}: {exc}\n{traceback.format_exc()}")
-            if self.send_parse_fail_message:
-                yield event.plain_result(format_message(self.parse_fail_message, error=exc))
+            yield event.plain_result(f"解析失败：{exc}")
 
     # ---- 抖音扫码登录 ----
 
@@ -522,8 +456,7 @@ class VideoParserPlugin(Star):
     async def dy_login(self, event: AstrMessageEvent):
         """发起抖音网页版扫码登录，返回二维码并后台自动检测登录状态。"""
         if self._active_login_event is not None:
-            if self.send_login_busy_message:
-                yield event.plain_result(self.login_busy_message)
+            yield event.plain_result("已有一个登录会话在进行中，请先完成或等待其超时")
             return
 
         qrcode_url = self.parser_api_base_url + DOUYIN_LOGIN_QRCODE_PATH
@@ -534,16 +467,14 @@ class VideoParserPlugin(Star):
             )
         except Exception as exc:
             logger.error(f"video_parser douyin login qrcode request failed: {exc}")
-            if self.send_login_qrcode_fail_message:
-                yield event.plain_result(format_message(self.login_qrcode_fail_message, error=exc))
+            yield event.plain_result(f"获取登录二维码失败：{exc}")
             return
 
         result = ensure_dict(payload)
         code = to_positive_int(result.get("code"), -1)
         if code != 200 or status_code != 200:
             msg = str(result.get("msg") or "").strip() or f"HTTP {status_code}"
-            if self.send_login_qrcode_fail_message:
-                yield event.plain_result(format_message(self.login_qrcode_fail_message, error=msg))
+            yield event.plain_result(f"获取登录二维码失败：{msg}")
             return
 
         data = ensure_dict(result.get("data"))
@@ -551,26 +482,24 @@ class VideoParserPlugin(Star):
         expires_in = to_positive_int(data.get("expires_in"), self.douyin_login_poll_timeout)
 
         if not qr_base64:
-            if self.send_login_qrcode_fail_message:
-                yield event.plain_result(format_message(self.login_qrcode_fail_message, error="返回内容为空"))
+            yield event.plain_result("获取登录二维码失败：返回内容为空")
             return
 
         self._active_login_event = event
         # 先启动后台轮询任务，再发送二维码（避免框架提前停止迭代导致轮询未启动）
         asyncio.create_task(self._poll_douyin_login(event))
         try:
-            if self.send_login_qrcode_caption:
-                yield event.chain_result([
-                    Image.fromBase64(qr_base64),
-                    Plain(format_message(self.login_qrcode_caption, expires_in=expires_in)),
-                ])
-            else:
-                yield event.chain_result([Image.fromBase64(qr_base64)])
+            yield event.chain_result([
+                Image.fromBase64(qr_base64),
+                Plain(
+                    f"\n请用抖音 APP 扫码登录（{expires_in} 秒内有效）\n"
+                    f"扫码成功后我会自动检测并通知你"
+                ),
+            ])
         except Exception as exc:
             logger.warning(f"video_parser send qrcode image failed: {exc}")
             self._active_login_event = None
-            if self.send_login_qrcode_send_fail_message:
-                yield event.plain_result(format_message(self.login_qrcode_send_fail_message, error=exc))
+            yield event.plain_result(f"二维码已生成，但发送图片失败：{exc}")
             return
 
     async def _poll_douyin_login(self, event: AstrMessageEvent):
@@ -598,27 +527,22 @@ class VideoParserPlugin(Star):
                     last_state = state
 
                 if state == "success":
-                    if self.send_login_success_message:
-                        await self._safe_send(event, self.login_success_message)
+                    await self._safe_send(
+                        event,
+                        "✅ 抖音登录成功！Cookie 已保存，现在可以正常解析抖音视频/图集了",
+                    )
                     return
                 if state in ("expired", "cancelled", "failed"):
                     if state == "expired":
-                        if self.send_login_expired_message:
-                            await self._safe_send(event, self.login_expired_message)
+                        await self._safe_send(event, "⏰ 登录二维码已过期，请重新发送 /dy登陆")
                     elif state == "cancelled":
-                        if self.send_login_cancelled_message:
-                            await self._safe_send(event, self.login_cancelled_message)
+                        await self._safe_send(event, "登录已取消")
                     else:
-                        if self.send_login_failed_message:
-                            err = str(data.get("error") or "").strip()
-                            await self._safe_send(
-                                event,
-                                format_message(self.login_failed_message, error=err or state),
-                            )
+                        err = str(data.get("error") or "").strip()
+                        await self._safe_send(event, f"❌ 抖音登录失败：{err or state}")
                     return
 
-            if self.send_login_timeout_message:
-                await self._safe_send(event, self.login_timeout_message)
+            await self._safe_send(event, "⏰ 登录超时，请重新发送 /dy登陆")
         finally:
             if self._active_login_event is event:
                 self._active_login_event = None
@@ -638,15 +562,14 @@ class VideoParserPlugin(Star):
         author = str(ensure_dict(data.get("author")).get("name") or "").strip()
         total = len(images)
 
-        summary = format_message(self.album_summary_message, total=total)
+        summary = f"图集解析成功！共 {total} 张图片"
         if title:
             summary += f"\n标题: {empty_fallback(title, DEFAULT_UNTITLED_TITLE)}"
         if author:
             summary += f"\n作者: {empty_fallback(author, DEFAULT_UNKNOWN_AUTHOR)}"
 
         logger.info(f"video_parser album: {total} images, title={title[:30] if title else 'N/A'}")
-        if self.send_album_summary_message:
-            yield event.plain_result(summary)
+        yield event.plain_result(summary)
 
         loop = asyncio.get_running_loop()
         sent = 0
@@ -669,11 +592,10 @@ class VideoParserPlugin(Star):
                     sent += 1
                 except Exception as exc2:
                     logger.warning(f"video_parser image {index} url fallback also failed: {exc2}")
-                    if self.send_image_fail_message:
-                        yield event.plain_result(format_message(self.image_fail_message, index=index))
+                    yield event.plain_result(f"第 {index} 张图片发送失败")
 
-        if sent == 0 and self.send_album_all_fail_message:
-            yield event.plain_result(self.album_all_fail_message)
+        if sent == 0:
+            yield event.plain_result("图集解析成功，但所有图片发送失败")
 
     # ---- 视频处理 ----
 
@@ -703,18 +625,15 @@ class VideoParserPlugin(Star):
             file_size = await self._get_remote_file_size(video_url)
         except Exception as exc:
             logger.warning(f"video_parser probe size failed: {exc}")
-            if self.send_size_fail_message:
-                yield event.plain_result(self.size_fail_message)
+            yield event.plain_result("获取视频大小失败，无法直接发送，请尝试点击源链接观看。")
             return
 
         threshold = self.video_max_size_mb * 1024 * 1024
         if file_size > threshold:
-            if self.send_size_exceeded_message:
-                yield event.plain_result(format_message(
-                    self.size_exceeded_message,
-                    file_size=f"{file_size / (1024 * 1024):.2f}",
-                    max_size=self.video_max_size_mb,
-                ))
+            yield event.plain_result(
+                f"视频大小为 {file_size / (1024 * 1024):.2f}MB，"
+                f"超过 {self.video_max_size_mb}MB 限制，请尝试点击源链接观看。"
+            )
             return
 
         # 带 Referer 下载视频到本地临时文件，避免 napcat 直连抖音 CDN 触发 403 防盗链
@@ -739,8 +658,7 @@ class VideoParserPlugin(Star):
                 os.remove(tmp_path)
             except OSError:
                 pass
-            if self.send_download_fail_message:
-                yield event.plain_result(self.download_fail_message)
+            yield event.plain_result("视频下载失败，无法直接发送，请尝试点击源链接观看。")
             return
 
         chain: List[Any] = []
