@@ -47,7 +47,7 @@ AstrBot v4 插件，调用外部解析 API 解析短视频/图集分享链接，
 | 绿洲 | weibo.cn | `platform_lvzhou` |
 | 度小视 | quanmin.baidu.com | `platform_duxiao` |
 
-> 每个平台的开关在 AstrBot 配置面板中独立控制，默认全部开启。
+> 每个平台的开关在 AstrBot 配置面板中独立控制，默认全部开启。为避免设置页面过长，27 个平台开关已折叠到「更多配置」区域，点击展开即可逐个调整。
 
 ## 🧪 平台测试状态
 
