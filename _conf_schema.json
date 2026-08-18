@@ -27,6 +27,7 @@
   "processing_message": {
     "type": "string",
     "description": "处理中提示语",
+    "collapsed": true,
     "default": "ikun解析bot正在处理中。。。"
   },
   "send_video_deleted_message": {
@@ -37,12 +38,206 @@
   "video_deleted_message": {
     "type": "string",
     "description": "视频已删除提示语",
+    "collapsed": true,
     "default": "该视频已被邪恶势力处理！！！"
   },
   "video_sending_message": {
     "type": "string",
     "description": "视频发送中提示语",
+    "collapsed": true,
     "default": "视频解析成功，正在发送视频..."
+  },
+  "send_video_sending_message": {
+    "type": "bool",
+    "description": "发送视频发送中提示",
+    "default": true
+  },
+  "send_empty_result_message": {
+    "type": "bool",
+    "description": "发送空结果提示",
+    "default": true
+  },
+  "empty_result_message": {
+    "type": "string",
+    "description": "空结果提示语",
+    "collapsed": true,
+    "default": "解析成功，但链接内容好像既不是视频也不是图集呢"
+  },
+  "send_parse_fail_message": {
+    "type": "bool",
+    "description": "发送解析失败提示",
+    "default": true
+  },
+  "parse_fail_message": {
+    "type": "string",
+    "description": "解析失败提示语（{error}=错误信息）",
+    "collapsed": true,
+    "default": "解析失败：{error}"
+  },
+  "send_size_fail_message": {
+    "type": "bool",
+    "description": "发送视频大小获取失败提示",
+    "default": true
+  },
+  "size_fail_message": {
+    "type": "string",
+    "description": "视频大小获取失败提示语",
+    "collapsed": true,
+    "default": "获取视频大小失败，无法直接发送，请尝试点击源链接观看。"
+  },
+  "send_size_exceeded_message": {
+    "type": "bool",
+    "description": "发送视频大小超限提示",
+    "default": true
+  },
+  "size_exceeded_message": {
+    "type": "string",
+    "description": "视频大小超限提示语（{file_size}/{max_size}）",
+    "collapsed": true,
+    "default": "视频大小为 {file_size}MB，超过 {max_size}MB 限制，请尝试点击源链接观看。"
+  },
+  "send_download_fail_message": {
+    "type": "bool",
+    "description": "发送视频下载失败提示",
+    "default": true
+  },
+  "download_fail_message": {
+    "type": "string",
+    "description": "视频下载失败提示语",
+    "collapsed": true,
+    "default": "视频下载失败，无法直接发送，请尝试点击源链接观看。"
+  },
+  "send_album_summary_message": {
+    "type": "bool",
+    "description": "发送图集摘要提示",
+    "default": true
+  },
+  "album_summary_message": {
+    "type": "string",
+    "description": "图集摘要提示语（{total}=图片数）",
+    "collapsed": true,
+    "default": "图集解析成功！共 {total} 张图片"
+  },
+  "send_image_fail_message": {
+    "type": "bool",
+    "description": "发送单张图片发送失败提示",
+    "default": true
+  },
+  "image_fail_message": {
+    "type": "string",
+    "description": "单张图片发送失败提示语（{index}=序号）",
+    "collapsed": true,
+    "default": "第 {index} 张图片发送失败"
+  },
+  "send_album_all_fail_message": {
+    "type": "bool",
+    "description": "发送图集全部图片发送失败提示",
+    "default": true
+  },
+  "album_all_fail_message": {
+    "type": "string",
+    "description": "图集全部图片发送失败提示语",
+    "collapsed": true,
+    "default": "图集解析成功，但所有图片发送失败"
+  },
+  "send_login_busy_message": {
+    "type": "bool",
+    "description": "发送登录会话冲突提示",
+    "default": true
+  },
+  "login_busy_message": {
+    "type": "string",
+    "description": "登录会话冲突提示语",
+    "collapsed": true,
+    "default": "已有一个登录会话在进行中，请先完成或等待其超时"
+  },
+  "send_login_qrcode_fail_message": {
+    "type": "bool",
+    "description": "发送二维码获取失败提示",
+    "default": true
+  },
+  "login_qrcode_fail_message": {
+    "type": "string",
+    "description": "二维码获取失败提示语（{error}）",
+    "collapsed": true,
+    "default": "获取登录二维码失败：{error}"
+  },
+  "send_login_qrcode_caption": {
+    "type": "bool",
+    "description": "发送二维码扫码提示文案",
+    "default": true
+  },
+  "login_qrcode_caption": {
+    "type": "string",
+    "description": "二维码扫码提示文案（{expires_in}=秒）",
+    "collapsed": true,
+    "default": "\n请用抖音 APP 扫码登录（{expires_in} 秒内有效）\n扫码成功后我会自动检测并通知你"
+  },
+  "send_login_qrcode_send_fail_message": {
+    "type": "bool",
+    "description": "发送二维码图片发送失败提示",
+    "default": true
+  },
+  "login_qrcode_send_fail_message": {
+    "type": "string",
+    "description": "二维码图片发送失败提示语（{error}）",
+    "collapsed": true,
+    "default": "二维码已生成，但发送图片失败：{error}"
+  },
+  "send_login_success_message": {
+    "type": "bool",
+    "description": "发送登录成功提示",
+    "default": true
+  },
+  "login_success_message": {
+    "type": "string",
+    "description": "登录成功提示语",
+    "collapsed": true,
+    "default": "✅ 抖音登录成功！Cookie 已保存，现在可以正常解析抖音视频/图集了"
+  },
+  "send_login_expired_message": {
+    "type": "bool",
+    "description": "发送二维码过期提示",
+    "default": true
+  },
+  "login_expired_message": {
+    "type": "string",
+    "description": "二维码过期提示语",
+    "collapsed": true,
+    "default": "⏰ 登录二维码已过期，请重新发送 /dy登陆"
+  },
+  "send_login_cancelled_message": {
+    "type": "bool",
+    "description": "发送登录取消提示",
+    "default": true
+  },
+  "login_cancelled_message": {
+    "type": "string",
+    "description": "登录取消提示语",
+    "collapsed": true,
+    "default": "登录已取消"
+  },
+  "send_login_failed_message": {
+    "type": "bool",
+    "description": "发送登录失败提示",
+    "default": true
+  },
+  "login_failed_message": {
+    "type": "string",
+    "description": "登录失败提示语（{error}）",
+    "collapsed": true,
+    "default": "❌ 抖音登录失败：{error}"
+  },
+  "send_login_timeout_message": {
+    "type": "bool",
+    "description": "发送登录超时提示",
+    "default": true
+  },
+  "login_timeout_message": {
+    "type": "string",
+    "description": "登录超时提示语",
+    "collapsed": true,
+    "default": "⏰ 登录超时，请重新发送 /dy登陆"
   },
   "douyin_login_poll_timeout": {
     "type": "int",
