@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.1
+AstrBot v4 短视频解析插件 v0.3.2
 """
 from __future__ import annotations
 
@@ -367,6 +367,8 @@ class VideoParserPlugin(Star):
             config.get("request_timeout_ms"), DEFAULT_TIMEOUT_MS
         )
         self.send_cover = bool(config.get("send_cover", True))
+        self.send_processing_message = bool(config.get("send_processing_message", True))
+        self.send_video_deleted_message = bool(config.get("send_video_deleted_message", True))
         self.processing_message = str(
             config.get("processing_message") or "ikun解析bot正在处理中。。。"
         ).strip()
@@ -387,7 +389,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.1 initialized: "
+            f"video_parser v0.3.2 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
@@ -418,7 +420,7 @@ class VideoParserPlugin(Star):
             )
             return
 
-        if self.processing_message:
+        if self.send_processing_message:
             yield event.plain_result(self.processing_message)
 
         try:
@@ -441,7 +443,8 @@ class VideoParserPlugin(Star):
 
         except VideoDeletedError:
             logger.info(f"video_parser video deleted: {share_url}")
-            yield event.plain_result(self.video_deleted_message)
+            if self.send_video_deleted_message:
+                yield event.plain_result(self.video_deleted_message)
         except Exception as exc:
             logger.error(f"video_parser error url={share_url}: {exc}\n{traceback.format_exc()}")
             yield event.plain_result(f"解析失败：{exc}")

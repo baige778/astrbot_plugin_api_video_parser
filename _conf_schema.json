@@ -23,16 +23,28 @@
     "hint": "是否在发送视频的同时附带封面图片。",
     "default": true
   },
+  "send_processing_message": {
+    "type": "bool",
+    "description": "发送处理中提示",
+    "hint": "是否在解析视频前发送处理中提示语。",
+    "default": true
+  },
   "processing_message": {
     "type": "string",
     "description": "处理中提示语",
-    "hint": "解析视频前发送的提示文字。留空则不发送。",
+    "hint": "解析视频前发送的提示文字，内容可自定义。是否发送由「发送处理中提示」开关控制。",
     "default": "ikun解析bot正在处理中。。。"
+  },
+  "send_video_deleted_message": {
+    "type": "bool",
+    "description": "发送视频已删除提示",
+    "hint": "是否在视频已被删除/下架时发送提示语。",
+    "default": true
   },
   "video_deleted_message": {
     "type": "string",
     "description": "视频已删除提示语",
-    "hint": "当解析的视频已被删除/下架时，发送的提示文字。",
+    "hint": "当解析的视频已被删除/下架时发送的提示文字，内容可自定义。是否发送由「发送视频已删除提示」开关控制。",
     "default": "该视频已被邪恶势力处理！！！"
   },
   "douyin_login_poll_timeout": {

@@ -73,8 +73,10 @@ AstrBot v4 插件，调用外部解析 API 解析短视频/图集分享链接，
 | `video_max_size_mb` | int | `50` | 视频最大大小（MB），超过不发送 |
 | `request_timeout_ms` | int | `15000` | API 请求和文件探测超时（毫秒） |
 | `send_cover` | bool | `true` | 是否发送视频封面图 |
-| `processing_message` | string | `ikun解析bot正在处理中。。。` | 解析前的处理中提示，留空不发送 |
-| `video_deleted_message` | string | `该视频已被邪恶势力处理！！！` | 视频已删除/下架时的提示语 |
+| `send_processing_message` | bool | `true` | 是否发送解析前的处理中提示 |
+| `processing_message` | string | `ikun解析bot正在处理中。。。` | 处理中提示语内容（可自定义） |
+| `send_video_deleted_message` | bool | `true` | 是否发送视频已删除/下架提示 |
+| `video_deleted_message` | string | `该视频已被邪恶势力处理！！！` | 视频已删除提示语内容（可自定义） |
 
 ### 平台开关（27 个）
 
