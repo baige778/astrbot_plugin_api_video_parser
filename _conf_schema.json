@@ -2,262 +2,218 @@
   "parser_api_base_url": {
     "type": "string",
     "description": "解析接口地址",
-    "hint": "用于请求视频解析服务的基础地址。",
     "default": "http://192.168.5.116:8000"
   },
   "video_max_size_mb": {
     "type": "int",
     "description": "最大视频大小限制 (MB)",
-    "hint": "超过此大小的视频将不会直接发送。",
     "default": 50
   },
   "request_timeout_ms": {
     "type": "int",
     "description": "请求超时时间 (毫秒)",
-    "hint": "API请求和文件探测的超时时间。",
     "default": 15000
   },
   "send_cover": {
     "type": "bool",
     "description": "发送视频封面图",
-    "hint": "是否在发送视频的同时附带封面图片。",
     "default": true
   },
   "send_processing_message": {
     "type": "bool",
     "description": "发送处理中提示",
-    "hint": "是否在解析视频前发送处理中提示语。",
     "default": true
   },
   "processing_message": {
     "type": "string",
     "description": "处理中提示语",
-    "hint": "解析视频前发送的提示文字，内容可自定义。是否发送由「发送处理中提示」开关控制。",
     "default": "ikun解析bot正在处理中。。。"
   },
   "send_video_deleted_message": {
     "type": "bool",
     "description": "发送视频已删除提示",
-    "hint": "是否在视频已被删除/下架时发送提示语。",
     "default": true
   },
   "video_deleted_message": {
     "type": "string",
     "description": "视频已删除提示语",
-    "hint": "当解析的视频已被删除/下架时发送的提示文字，内容可自定义。是否发送由「发送视频已删除提示」开关控制。",
     "default": "该视频已被邪恶势力处理！！！"
   },
   "video_sending_message": {
     "type": "string",
     "description": "视频发送中提示语",
-    "hint": "视频解析成功后、发送前显示的提示文字，内容可自定义。",
     "default": "视频解析成功，正在发送视频..."
-  },
-  "douyin_video_sending_message": {
-    "type": "string",
-    "description": "抖音视频发送中提示语",
-    "hint": "抖音视频解析成功后、直接发送前显示的提示文字，内容可自定义。",
-    "default": "抖音视频解析成功，正在直接发送..."
   },
   "douyin_login_poll_timeout": {
     "type": "int",
     "description": "抖音登录轮询超时 (秒)",
-    "hint": "扫码登录后后台检测登录状态的超时时间，需与后端 DOUYIN_LOGIN_TIMEOUT 保持一致。",
     "default": 300
   },
   "douyin_login_poll_interval": {
     "type": "int",
     "description": "抖音登录轮询间隔 (秒)",
-    "hint": "后台检测登录状态的间隔，不建议过小以免频繁请求后端。",
     "default": 3
   },
   "platform_douyin": {
     "type": "bool",
     "description": "抖音",
     "collapsed": true,
-    "hint": "是否开启抖音视频/图集解析。",
     "default": true
   },
   "platform_tiktok": {
     "type": "bool",
     "description": "TikTok",
     "collapsed": true,
-    "hint": "是否开启TikTok视频解析。",
     "default": true
   },
   "platform_kuaishou": {
     "type": "bool",
     "description": "快手",
     "collapsed": true,
-    "hint": "是否开启快手视频/图集解析。",
     "default": true
   },
   "platform_bilibili": {
     "type": "bool",
     "description": "B站",
     "collapsed": true,
-    "hint": "是否开启B站视频解析。",
     "default": true
   },
   "platform_xiaohongshu": {
     "type": "bool",
     "description": "小红书",
     "collapsed": true,
-    "hint": "是否开启小红书视频/图集解析。",
     "default": true
   },
   "platform_weibo": {
     "type": "bool",
     "description": "微博",
     "collapsed": true,
-    "hint": "是否开启微博视频/图集解析。",
     "default": true
   },
   "platform_xigua": {
     "type": "bool",
     "description": "西瓜视频",
     "collapsed": true,
-    "hint": "是否开启西瓜视频解析。",
     "default": true
   },
   "platform_weishi": {
     "type": "bool",
     "description": "微视",
     "collapsed": true,
-    "hint": "是否开启微视视频解析。",
     "default": true
   },
   "platform_pipixia": {
     "type": "bool",
     "description": "皮皮虾",
     "collapsed": true,
-    "hint": "是否开启皮皮虾视频/图集解析。",
     "default": true
   },
   "platform_pipigx": {
     "type": "bool",
     "description": "皮皮搞笑",
     "collapsed": true,
-    "hint": "是否开启皮皮搞笑视频解析。",
     "default": true
   },
   "platform_huoshan": {
     "type": "bool",
     "description": "火山小视频",
     "collapsed": true,
-    "hint": "是否开启火山小视频解析。",
     "default": true
   },
   "platform_pear": {
     "type": "bool",
     "description": "梨视频",
     "collapsed": true,
-    "hint": "是否开启梨视频视频解析。",
     "default": true
   },
   "platform_haokan": {
     "type": "bool",
     "description": "好看视频",
     "collapsed": true,
-    "hint": "是否开启好看视频解析。",
     "default": true
   },
   "platform_huya": {
     "type": "bool",
     "description": "虎牙",
     "collapsed": true,
-    "hint": "是否开启虎牙视频解析。",
     "default": true
   },
   "platform_acfun": {
     "type": "bool",
     "description": "AcFun",
     "collapsed": true,
-    "hint": "是否开启AcFun视频解析。",
     "default": true
   },
   "platform_meipai": {
     "type": "bool",
     "description": "美拍",
     "collapsed": true,
-    "hint": "是否开启美拍视频解析。",
     "default": true
   },
   "platform_doupai": {
     "type": "bool",
     "description": "逗拍",
     "collapsed": true,
-    "hint": "是否开启逗拍视频解析。",
     "default": true
   },
   "platform_quanminkge": {
     "type": "bool",
     "description": "全民K歌",
     "collapsed": true,
-    "hint": "是否开启全民K歌视频解析。",
     "default": true
   },
   "platform_sixroom": {
     "type": "bool",
     "description": "6间房",
     "collapsed": true,
-    "hint": "是否开启6间房视频解析。",
     "default": true
   },
   "platform_xinpianchang": {
     "type": "bool",
     "description": "新片场",
     "collapsed": true,
-    "hint": "是否开启新片场视频解析。",
     "default": true
   },
   "platform_twitter": {
     "type": "bool",
     "description": "Twitter/X",
     "collapsed": true,
-    "hint": "是否开启Twitter/X视频解析。",
     "default": true
   },
   "platform_zuiyou": {
     "type": "bool",
     "description": "最右",
     "collapsed": true,
-    "hint": "是否开启最右视频解析。",
     "default": true
   },
   "platform_cctv": {
     "type": "bool",
     "description": "央视网",
     "collapsed": true,
-    "hint": "是否开启央视网视频解析。",
     "default": true
   },
   "platform_sohu": {
     "type": "bool",
     "description": "搜狐视频",
     "collapsed": true,
-    "hint": "是否开启搜狐视频解析。",
     "default": true
   },
   "platform_tencent_video": {
     "type": "bool",
     "description": "腾讯视频",
     "collapsed": true,
-    "hint": "是否开启腾讯视频解析。",
     "default": true
   },
   "platform_lvzhou": {
     "type": "bool",
     "description": "绿洲",
     "collapsed": true,
-    "hint": "是否开启绿洲视频解析。",
     "default": true
   },
   "platform_duxiao": {
     "type": "bool",
     "description": "度小视",
     "collapsed": true,
-    "hint": "是否开启度小视视频解析。",
     "default": true
   }
 }

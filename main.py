@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.5
+AstrBot v4 短视频解析插件 v0.3.6
 """
 from __future__ import annotations
 
@@ -113,7 +113,6 @@ DEFAULT_UNTITLED_TITLE = "未命名"
 DEFAULT_UNKNOWN_AUTHOR = "未知作者"
 DEFAULT_VIDEO_DELETED_MESSAGE = "该视频已被邪恶势力处理！！！"
 DEFAULT_VIDEO_SENDING_MESSAGE = "视频解析成功，正在发送视频..."
-DEFAULT_DOUYIN_VIDEO_SENDING_MESSAGE = "抖音视频解析成功，正在直接发送..."
 DEFAULT_LOGIN_POLL_TIMEOUT = 300
 DEFAULT_LOGIN_POLL_INTERVAL = 3
 
@@ -380,10 +379,6 @@ class VideoParserPlugin(Star):
         self.video_sending_message = str(
             config.get("video_sending_message") or DEFAULT_VIDEO_SENDING_MESSAGE
         ).strip() or DEFAULT_VIDEO_SENDING_MESSAGE
-        self.douyin_video_sending_message = str(
-            config.get("douyin_video_sending_message")
-            or DEFAULT_DOUYIN_VIDEO_SENDING_MESSAGE
-        ).strip() or DEFAULT_DOUYIN_VIDEO_SENDING_MESSAGE
         self.douyin_login_poll_timeout = to_positive_int(
             config.get("douyin_login_poll_timeout"), DEFAULT_LOGIN_POLL_TIMEOUT
         )
@@ -398,7 +393,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.5 initialized: "
+            f"video_parser v0.3.6 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
@@ -439,12 +434,8 @@ class VideoParserPlugin(Star):
                 async for result in self._handle_album(event, video_data):
                     yield result
                 return
-            if "douyin.com" in share_url and str(video_data.get("video_url") or "").strip():
-                async for result in self._handle_video(event, video_data, direct=True):
-                    yield result
-                return
             if str(video_data.get("video_url") or "").strip():
-                async for result in self._handle_video(event, video_data, direct=False):
+                async for result in self._handle_video(event, video_data):
                     yield result
                 return
 
@@ -607,11 +598,8 @@ class VideoParserPlugin(Star):
 
     # ---- 视频处理 ----
 
-    async def _handle_video(
-        self, event: AstrMessageEvent, data: Dict[str, Any], *, direct: bool
-    ):
-        tip = self.douyin_video_sending_message if direct else self.video_sending_message
-        yield event.plain_result(tip)
+    async def _handle_video(self, event: AstrMessageEvent, data: Dict[str, Any]):
+        yield event.plain_result(self.video_sending_message)
 
         video_url = str(data.get("video_url") or "").strip()
 

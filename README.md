@@ -78,7 +78,6 @@ AstrBot v4 插件，调用外部解析 API 解析短视频/图集分享链接，
 | `send_video_deleted_message` | bool | `true` | 是否发送视频已删除/下架提示 |
 | `video_deleted_message` | string | `该视频已被邪恶势力处理！！！` | 视频已删除提示语内容（可自定义） |
 | `video_sending_message` | string | `视频解析成功，正在发送视频...` | 视频发送中提示语（可自定义） |
-| `douyin_video_sending_message` | string | `抖音视频解析成功，正在直接发送...` | 抖音视频发送中提示语（可自定义） |
 
 ### 平台开关（27 个）
 
