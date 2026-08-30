@@ -23,6 +23,18 @@
     "default": true,
     "hint": "是否在发送视频的同时附带封面图片。"
   },
+  "album_merge_threshold": {
+    "type": "int",
+    "description": "图集合并阈值 (张)",
+    "default": 9,
+    "hint": "图集总张数超过该值时，将所有图片合并成一条消息发送；设为 0 则始终逐张发送。"
+  },
+  "video_merge_message": {
+    "type": "bool",
+    "description": "视频封面/标题/视频合并发送",
+    "default": false,
+    "hint": "开启后封面图、标题作者与视频合并为一条消息发送；关闭则封面与视频分开发送。"
+  },
   "send_processing_message": {
     "type": "bool",
     "description": "发送处理中提示",

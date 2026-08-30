@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.12
+AstrBot v4 短视频解析插件 v0.3.13
 """
 from __future__ import annotations
 
@@ -115,6 +115,7 @@ DEFAULT_VIDEO_DELETED_MESSAGE = "该视频已被邪恶势力处理！！！"
 DEFAULT_VIDEO_SENDING_MESSAGE = "视频解析成功，正在发送视频..."
 DEFAULT_LOGIN_POLL_TIMEOUT = 300
 DEFAULT_LOGIN_POLL_INTERVAL = 3
+DEFAULT_ALBUM_MERGE_THRESHOLD = 9
 
 # 抖音登录接口路径（相对 parser_api_base_url）
 DOUYIN_LOGIN_QRCODE_PATH = "/douyin/login/qrcode"
@@ -339,6 +340,13 @@ def to_positive_int(value: Any, default: int) -> int:
         return default
     return number if number > 0 else default
 
+def to_non_negative_int(value: Any, default: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return number if number >= 0 else default
+
 def empty_fallback(value: str, fallback: str) -> str:
     return value if value.strip() else fallback
 
@@ -368,6 +376,10 @@ class VideoParserPlugin(Star):
             config.get("request_timeout_ms"), DEFAULT_TIMEOUT_MS
         )
         self.send_cover = bool(config.get("send_cover", True))
+        self.album_merge_threshold = to_non_negative_int(
+            config.get("album_merge_threshold"), DEFAULT_ALBUM_MERGE_THRESHOLD
+        )
+        self.video_merge_message = bool(config.get("video_merge_message", False))
         self.send_processing_message = bool(config.get("send_processing_message", True))
         self.send_video_deleted_message = bool(config.get("send_video_deleted_message", True))
         self.send_video_sending_message = bool(config.get("send_video_sending_message", True))
@@ -394,7 +406,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.12 initialized: "
+            f"video_parser v0.3.13 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
@@ -572,6 +584,44 @@ class VideoParserPlugin(Star):
         yield event.plain_result(summary)
 
         loop = asyncio.get_running_loop()
+        merge = self.album_merge_threshold > 0 and total > self.album_merge_threshold
+
+        if merge:
+            logger.info(
+                f"video_parser album merged into one message: {total} images > "
+                f"threshold {self.album_merge_threshold}"
+            )
+            chain: List[Any] = []
+            sent = 0
+            for index, image in enumerate(images, start=1):
+                image_url = str(image.get("url") or "").strip()
+                if not image_url:
+                    logger.warning(f"video_parser image {index} has no url, skipping")
+                    continue
+
+                try:
+                    b64 = await loop.run_in_executor(
+                        None, lambda u=image_url: image_url_to_base64(u, self.request_timeout_ms)
+                    )
+                    chain.append(Image(file=b64))
+                    sent += 1
+                except Exception as exc:
+                    logger.warning(f"video_parser image {index} download/send failed: {exc}")
+                    try:
+                        chain.append(Image.fromURL(image_url))
+                        sent += 1
+                    except Exception as exc2:
+                        logger.warning(f"video_parser image {index} url fallback also failed: {exc2}")
+                        chain.append(Plain(f"第 {index} 张图片发送失败"))
+                if total > 1:
+                    chain.append(Plain(f"第 {index}/{total} 张"))
+
+            if chain:
+                yield event.chain_result(chain)
+            if sent == 0:
+                yield event.plain_result("图集解析成功，但所有图片发送失败")
+            return
+
         sent = 0
         for index, image in enumerate(images, start=1):
             image_url = str(image.get("url") or "").strip()
@@ -599,27 +649,36 @@ class VideoParserPlugin(Star):
 
     # ---- 视频处理 ----
 
+    async def _cover_segment(self, cover_url: str) -> Optional[Any]:
+        """下载封面并返回 Image 段（base64 优先，兜底 URL），失败返回 None。"""
+        loop = asyncio.get_running_loop()
+        try:
+            b64 = await loop.run_in_executor(
+                None, lambda u=cover_url: image_url_to_base64(u, self.request_timeout_ms)
+            )
+            return Image(file=b64)
+        except Exception as exc:
+            logger.warning(f"video_parser cover failed: {exc}")
+            try:
+                return Image.fromURL(cover_url)
+            except Exception:
+                return None
+
     async def _handle_video(self, event: AstrMessageEvent, data: Dict[str, Any]):
         if self.send_video_sending_message:
             yield event.plain_result(self.video_sending_message)
 
         video_url = str(data.get("video_url") or "").strip()
 
+        cover_segment: Optional[Any] = None
         if self.send_cover:
             cover_url = _pick_first_str(data, "cover_url", "cover", "thumbnail", "thumb", "poster")
             if cover_url:
-                try:
-                    loop = asyncio.get_running_loop()
-                    b64 = await loop.run_in_executor(
-                        None, lambda u=cover_url: image_url_to_base64(u, self.request_timeout_ms)
-                    )
-                    yield event.chain_result([Image(file=b64)])
-                except Exception as exc:
-                    logger.warning(f"video_parser cover failed: {exc}")
-                    try:
-                        yield event.chain_result([Image.fromURL(cover_url)])
-                    except Exception:
-                        pass
+                segment = await self._cover_segment(cover_url)
+                if self.video_merge_message:
+                    cover_segment = segment
+                elif segment is not None:
+                    yield event.chain_result([segment])
 
         try:
             file_size = await self._get_remote_file_size(video_url)
@@ -662,6 +721,9 @@ class VideoParserPlugin(Star):
             return
 
         chain: List[Any] = []
+        if self.video_merge_message and cover_segment is not None:
+            chain.append(cover_segment)
+
         title = str(data.get("title") or "").strip()
         author = str(ensure_dict(data.get("author")).get("name") or "").strip()
         if title or author:
