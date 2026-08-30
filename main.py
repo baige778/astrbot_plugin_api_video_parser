@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.18
+AstrBot v4 短视频解析插件 v0.3.19
 """
 from __future__ import annotations
 
@@ -409,7 +409,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.18 initialized: "
+            f"video_parser v0.3.19 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
