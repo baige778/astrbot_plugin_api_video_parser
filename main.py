@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.13
+AstrBot v4 短视频解析插件 v0.3.16
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, MessageChain, filter
-from astrbot.api.message_components import Image, Plain, Video
+from astrbot.api.message_components import Image, Node, Nodes, Plain, Video
 from astrbot.api.star import Context, Star
 
 # ---- 平台定义 ----
@@ -359,6 +359,17 @@ def _pick_first_str(data: Dict[str, Any], *keys: str) -> Optional[str]:
                 return text
     return None
 
+def _event_self_id(event: AstrMessageEvent) -> str:
+    """获取机器人自身 id，兼容旧版本缺少 get_self_id 的情况。"""
+    getter = getattr(event, "get_self_id", None)
+    if callable(getter):
+        try:
+            value = getter()
+        except Exception:
+            value = ""
+        return str(value or "").strip() or "0"
+    return "0"
+
 # ---- 插件主体 ----
 
 class VideoParserPlugin(Star):
@@ -406,7 +417,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.13 initialized: "
+            f"video_parser v0.3.16 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
@@ -720,19 +731,40 @@ class VideoParserPlugin(Star):
             yield event.plain_result("视频下载失败，无法直接发送，请尝试点击源链接观看。")
             return
 
-        chain: List[Any] = []
-        if self.video_merge_message and cover_segment is not None:
-            chain.append(cover_segment)
-
         title = str(data.get("title") or "").strip()
         author = str(ensure_dict(data.get("author")).get("name") or "").strip()
+        title_author_text = ""
         if title or author:
-            chain.append(Plain(
-                f"\n标题: {empty_fallback(title, DEFAULT_UNTITLED_TITLE)}"
-                f"\n作者: {empty_fallback(author, DEFAULT_UNKNOWN_AUTHOR)}"
-            ))
-        chain.append(Video.fromFileSystem(tmp_path))
-        yield event.chain_result(chain)
+            title_author_text = (
+                f"标题: {empty_fallback(title, DEFAULT_UNTITLED_TITLE)}\n"
+                f"作者: {empty_fallback(author, DEFAULT_UNKNOWN_AUTHOR)}"
+            )
+
+        video_segment = Video.fromFileSystem(tmp_path)
+
+        if self.video_merge_message:
+            # 使用合并转发：信息（封面图+标题作者）与视频各占一个节点。
+            # QQ 展开单个节点只会渲染一种主媒体，混合塞进一个节点会导致图文丢失。
+            uin = _event_self_id(event)
+            nodes: List[Any] = []
+
+            info_content: List[Any] = []
+            if cover_segment is not None:
+                info_content.append(cover_segment)
+            if title_author_text:
+                info_content.append(Plain(title_author_text))
+            if info_content:
+                nodes.append(Node(uin=uin, name="视频解析", content=info_content))
+
+            nodes.append(Node(uin=uin, name="视频解析", content=[video_segment]))
+
+            yield event.chain_result([Nodes(nodes)])
+        else:
+            # 关闭合并转发：标题作者与视频分开发送，
+            # 避免文字与视频混在同一消息链中被视频覆盖丢失
+            if title_author_text:
+                yield event.plain_result(title_author_text)
+            yield event.chain_result([video_segment])
 
         # 延迟清理临时文件，给 napcat 留出上传时间
         asyncio.create_task(_delayed_remove(tmp_path))
