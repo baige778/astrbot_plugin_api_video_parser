@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, MessageChain, filter
-from astrbot.api.message_components import Image, Node, Nodes, Plain, Video
+from astrbot.api.message_components import File, Image, Node, Nodes, Plain, Video
 from astrbot.api.star import Context, Star
 
 # ---- 平台定义 ----
@@ -115,6 +115,9 @@ DEFAULT_VIDEO_DELETED_MESSAGE = "该视频已被邪恶势力处理！！！"
 DEFAULT_VIDEO_SENDING_MESSAGE = "视频解析成功，正在发送视频..."
 DEFAULT_LOGIN_POLL_TIMEOUT = 300
 DEFAULT_LOGIN_POLL_INTERVAL = 3
+
+# NapCat 合并转发（伪造转发）里视频上传的硬上限（字节），超过则改用「文件」节点绕开
+NAPCAT_FORWARD_VIDEO_MAX_BYTES = 100 * 1024 * 1024
 
 # 抖音登录接口路径（相对 parser_api_base_url）
 DOUYIN_LOGIN_QRCODE_PATH = "/douyin/login/qrcode"
@@ -702,10 +705,13 @@ class VideoParserPlugin(Star):
                 f"作者: {empty_fallback(author, DEFAULT_UNKNOWN_AUTHOR)}"
             )
 
-        video_segment = Video.fromFileSystem(tmp_path)
+        # NapCat 合并转发里视频上传有 100MB 硬限制，超过则改用「文件」节点绕开；
+        # 普通发送走 NT 内核视频通道，无此限制，仍按视频发送。
+        oversized_for_forward = downloaded > NAPCAT_FORWARD_VIDEO_MAX_BYTES
+        video_filename = os.path.basename(tmp_path)
 
         if self.video_merge_message:
-            # 使用合并转发：信息（封面图+标题作者）与视频各占一个节点。
+            # 使用合并转发：信息（封面图+标题作者）与视频/文件各占一个节点。
             # QQ 展开单个节点只会渲染一种主媒体，混合塞进一个节点会导致图文丢失。
             uin = _event_self_id(event)
             nodes: List[Any] = []
@@ -718,7 +724,11 @@ class VideoParserPlugin(Star):
             if info_content:
                 nodes.append(Node(uin=uin, name="视频解析", content=info_content))
 
-            nodes.append(Node(uin=uin, name="视频解析", content=[video_segment]))
+            if oversized_for_forward:
+                media_segment = File(name=video_filename, file=tmp_path)
+            else:
+                media_segment = Video.fromFileSystem(tmp_path)
+            nodes.append(Node(uin=uin, name="视频解析", content=[media_segment]))
 
             yield event.chain_result([Nodes(nodes)])
         else:
@@ -726,7 +736,7 @@ class VideoParserPlugin(Star):
             # 避免文字与视频混在同一消息链中被视频覆盖丢失
             if title_author_text:
                 yield event.plain_result(title_author_text)
-            yield event.chain_result([video_segment])
+            yield event.chain_result([Video.fromFileSystem(tmp_path)])
 
         # 延迟清理临时文件，给 napcat 留出上传时间
         asyncio.create_task(_delayed_remove(tmp_path))
