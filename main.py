@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.20
+AstrBot v4 视频/图集解析插件（版本号以 metadata.yaml 为准，动态读取）。
 """
 from __future__ import annotations
 
@@ -20,6 +20,24 @@ from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.message_components import File, Image, Node, Nodes, Plain, Video
 from astrbot.api.star import Context, Star
+
+
+def _load_version() -> str:
+    """从同目录 metadata.yaml 读取版本号，作为唯一版本数据源。"""
+    try:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "metadata.yaml")
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        m = re.search(r"^version:\s*['\"]?([^'\"\s]+)", text, re.MULTILINE)
+        if m:
+            return m.group(1).strip()
+    except Exception:
+        pass
+    return "unknown"
+
+
+__version__ = _load_version()
+
 
 # ---- 平台定义 ----
 
@@ -414,7 +432,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.20 initialized: "
+            f"video_parser v{__version__} initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
