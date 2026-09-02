@@ -16,7 +16,6 @@ desc: |
   ### v0.3.21
   - 新增独立解析超时 parse_timeout_ms（默认 30000ms），仅作用于解析请求，兼容抖音风控兜底慢路径（20~60s），修复偶发 timed out。
   - 后端同步升级到 v0.0.5：抖音三级解析、Cookie 直连提速、浏览器常驻复用、video_id 级结果缓存、video_id 复用、结构化日志。
-  - main.py 改为从 metadata.yaml 动态读取版本号，消除版本号脱节问题。
 author: baige778
 version: 0.3.21
 support_platforms:
