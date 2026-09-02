@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.19
+AstrBot v4 短视频解析插件 v0.3.20
 """
 from __future__ import annotations
 
@@ -109,6 +109,8 @@ def is_video_deleted_error(error_msg: str) -> bool:
 DEFAULT_PARSER_API_BASE_URL = "http://192.168.5.116:8000"
 DEFAULT_VIDEO_MAX_SIZE_MB = 50
 DEFAULT_TIMEOUT_MS = 15000
+# 解析请求专用超时：抖音风控触发兜底解析较慢（可达 20-60 秒），独立放宽
+DEFAULT_PARSE_TIMEOUT_MS = 30000
 DEFAULT_UNTITLED_TITLE = "未命名"
 DEFAULT_UNKNOWN_AUTHOR = "未知作者"
 DEFAULT_VIDEO_DELETED_MESSAGE = "该视频已被邪恶势力处理！！！"
@@ -381,6 +383,9 @@ class VideoParserPlugin(Star):
         self.request_timeout_ms = to_positive_int(
             config.get("request_timeout_ms"), DEFAULT_TIMEOUT_MS
         )
+        self.parse_timeout_ms = to_positive_int(
+            config.get("parse_timeout_ms"), DEFAULT_PARSE_TIMEOUT_MS
+        )
         self.send_cover = bool(config.get("send_cover", True))
         self.video_merge_message = bool(config.get("video_merge_message", False))
         self.send_processing_message = bool(config.get("send_processing_message", True))
@@ -409,7 +414,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.19 initialized: "
+            f"video_parser v0.3.20 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
@@ -751,7 +756,7 @@ class VideoParserPlugin(Star):
         )
         loop = asyncio.get_running_loop()
         payload, _status = await loop.run_in_executor(
-            None, lambda: request_json(full_url, timeout_ms=self.request_timeout_ms)
+            None, lambda: request_json(full_url, timeout_ms=self.parse_timeout_ms)
         )
         result = ensure_dict(payload)
         code = int(result.get("code") or 0)

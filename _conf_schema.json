@@ -17,6 +17,12 @@
     "default": 15000,
     "hint": "API请求和文件探测的超时时间。"
   },
+  "parse_timeout_ms": {
+    "type": "int",
+    "description": "解析超时时间 (毫秒)",
+    "default": 30000,
+    "hint": "解析视频/图集链接的超时时间。抖音风控触发兜底解析较慢（可达20-60秒），建议设为30000。"
+  },
   "send_cover": {
     "type": "bool",
     "description": "发送视频封面图",
