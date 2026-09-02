@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 视频/图集解析插件（版本号以 metadata.yaml 为准，动态读取）。
+AstrBot v4 短视频解析插件 v0.3.21
 """
 from __future__ import annotations
 
@@ -14,30 +14,13 @@ import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.message_components import File, Image, Node, Nodes, Plain, Video
 from astrbot.api.star import Context, Star
-
-
-def _load_version() -> str:
-    """从同目录 metadata.yaml 读取版本号，作为唯一版本数据源。"""
-    try:
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "metadata.yaml")
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
-        m = re.search(r"^version:\s*['\"]?([^'\"\s]+)", text, re.MULTILINE)
-        if m:
-            return m.group(1).strip()
-    except Exception:
-        pass
-    return "unknown"
-
-
-__version__ = _load_version()
-
 
 # ---- 平台定义 ----
 
@@ -122,6 +105,12 @@ def is_video_deleted_error(error_msg: str) -> bool:
             return True
     return False
 
+
+def is_douyin_login_expired_error(error_msg: str) -> bool:
+    """判断解析错误是否为抖音登录态失效（需要重新扫码登录）。"""
+    msg = str(error_msg or "")
+    return any(kw in msg for kw in DOUYIN_LOGIN_EXPIRED_KEYWORDS)
+
 # ---- 默认配置 ----
 
 DEFAULT_PARSER_API_BASE_URL = "http://192.168.5.116:8000"
@@ -143,6 +132,19 @@ NAPCAT_FORWARD_VIDEO_MAX_BYTES = 100 * 1024 * 1024
 DOUYIN_LOGIN_QRCODE_PATH = "/douyin/login/qrcode"
 DOUYIN_LOGIN_STATUS_PATH = "/douyin/login/status"
 DOUYIN_LOGIN_CANCEL_PATH = "/douyin/login/cancel"
+DOUYIN_LOGIN_LOGGED_IN_PATH = "/douyin/login/logged_in"
+
+# 抖音登录态失效的反应：后端兜底失败时若检测到无登录态，
+# 会在 msg 里带回这些关键词，插件据此提示用户重新扫码登录。
+DOUYIN_LOGIN_EXPIRED_KEYWORDS = (
+    "登录态已失效",
+    "登录态失效",
+    "重新扫描二维码登录",
+    "重新扫码登录",
+)
+
+# 群聊黑白名单配置文件（存放于插件数据目录）
+GROUP_FILTER_FILENAME = "group_filter.json"
 
 IMG_DOWNLOAD_HEADERS = {
     "User-Agent": (
@@ -426,13 +428,17 @@ class VideoParserPlugin(Star):
         )
         self._active_login_event: Optional[AstrMessageEvent] = None
 
+        # 群聊黑白名单配置（本地 JSON，Plugin Page 读写）
+        self._group_filter = self._load_group_filter()
+        self._register_web_apis()
+
         # 打印已启用的平台
         enabled_platforms = [
             name for key, name, _ in PLATFORM_CONFIGS
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v{__version__} initialized: "
+            f"video_parser v0.3.22 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
@@ -449,6 +455,11 @@ class VideoParserPlugin(Star):
             if share_url is not None:
                 logger.info(f"video_parser URL from JSON: {share_url}")
         if share_url is None:
+            return
+
+        # 群聊黑白名单过滤（私聊同样受限，见 Plugin Page 设置）
+        if not self._group_filter_allows(event):
+            logger.info(f"video_parser blocked by group filter: url={share_url}")
             return
 
         # 平台开关检查
@@ -486,7 +497,12 @@ class VideoParserPlugin(Star):
                 yield event.plain_result(self.video_deleted_message)
         except Exception as exc:
             logger.error(f"video_parser error url={share_url}: {exc}\n{traceback.format_exc()}")
-            yield event.plain_result(f"解析失败：{exc}")
+            if is_douyin_login_expired_error(str(exc)):
+                yield event.plain_result(
+                    "⚠️ 抖音登录态已失效，请发送 /dy登陆 重新扫码登录后再试"
+                )
+            else:
+                yield event.plain_result(f"解析失败：{exc}")
 
     # ---- 抖音扫码登录 ----
 
@@ -591,6 +607,205 @@ class VideoParserPlugin(Star):
             await event.send(MessageChain([Plain(text)]))
         except Exception as exc:
             logger.error(f"video_parser douyin login push failed: {exc}")
+
+    # ---- 群聊黑白名单 + Plugin Page ----
+
+    def _group_filter_data_dir(self) -> Path:
+        """群过滤配置文件目录：优先 AstrBot 插件数据目录，回退插件目录。"""
+        try:
+            from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
+
+            base = Path(get_astrbot_plugin_data_path())
+        except Exception:
+            base = Path(__file__).resolve().parent / "_data"
+        d = base / "astrbot_plugin_api_video_parser"
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            d = Path(__file__).resolve().parent / "_data"
+            d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _group_filter_path(self) -> Path:
+        return self._group_filter_data_dir() / GROUP_FILTER_FILENAME
+
+    @staticmethod
+    def _default_group_filter() -> Dict[str, Any]:
+        return {
+            "enabled": False,
+            "mode": "blacklist",  # blacklist | whitelist
+            "private_allowed": True,  # 私聊是否允许解析（独立于群名单）
+            "group_ids": [],
+        }
+
+    def _load_group_filter(self) -> Dict[str, Any]:
+        cfg = self._default_group_filter()
+        try:
+            raw = json.loads(self._group_filter_path().read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                cfg["enabled"] = bool(raw.get("enabled", cfg["enabled"]))
+                mode = str(raw.get("mode") or "blacklist")
+                cfg["mode"] = mode if mode in ("blacklist", "whitelist") else "blacklist"
+                cfg["private_allowed"] = bool(raw.get("private_allowed", True))
+                gids = raw.get("group_ids")
+                if isinstance(gids, list):
+                    cfg["group_ids"] = [str(g) for g in gids]
+        except Exception as exc:
+            logger.warning(f"video_parser load group filter failed: {exc}")
+        return cfg
+
+    def _save_group_filter(self, cfg: Dict[str, Any]) -> bool:
+        try:
+            self._group_filter_path().write_text(
+                json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            self._group_filter = cfg
+            return True
+        except Exception as exc:
+            logger.error(f"video_parser save group filter failed: {exc}")
+            return False
+
+    def _group_filter_allows(self, event: AstrMessageEvent) -> bool:
+        """判断当前事件是否放行解析（私聊同样受开关控制）。"""
+        cfg = self._group_filter
+        if not cfg.get("enabled"):
+            return True
+        mode = cfg.get("mode") or "blacklist"
+
+        if event.is_private_chat():
+            return bool(cfg.get("private_allowed", True))
+
+        gid = str(event.get_group_id() or "").strip()
+        if not gid:
+            # 无法识别群号（非 QQ 群或异常），默认放行，避免误拦
+            return True
+        in_list = gid in {str(g) for g in (cfg.get("group_ids") or [])}
+
+        if mode == "whitelist":
+            return in_list
+        return not in_list
+
+    async def _fetch_aiocqhttp_groups(self) -> List[Dict[str, str]]:
+        """通过 aiocqhttp 平台适配器调用 OneBot get_group_list 拉取群列表。"""
+        groups: List[Dict[str, str]] = []
+        seen = set()
+        try:
+            platform_manager = getattr(self.context, "platform_manager", None)
+            platform_insts = getattr(platform_manager, "platform_insts", None) or []
+        except Exception:
+            platform_insts = []
+        for platform in platform_insts:
+            meta = platform.meta()
+            if getattr(meta, "name", "") != "aiocqhttp":
+                continue
+            bot = getattr(platform, "bot", None)
+            if bot is None:
+                getter = getattr(platform, "get_client", None)
+                if callable(getter):
+                    bot = getter()
+            if bot is None:
+                continue
+            try:
+                ret = await bot.call_action("get_group_list")
+            except Exception as exc:
+                logger.warning(f"video_parser get_group_list failed: {exc}")
+                continue
+            if isinstance(ret, dict):
+                ret = ret.get("data") or ret.get("groups") or []
+            if not isinstance(ret, list):
+                continue
+            for g in ret:
+                if not isinstance(g, dict):
+                    continue
+                gid = str(g.get("group_id") or "").strip()
+                if not gid:
+                    continue
+                name = str(g.get("group_name") or "").strip() or gid
+                if gid in seen:
+                    continue
+                seen.add(gid)
+                groups.append({"group_id": gid, "group_name": name})
+        groups.sort(key=lambda x: x["group_id"])
+        return groups
+
+    def _register_web_apis(self) -> None:
+        """注册 Plugin Page 依赖的后端 Web API。"""
+        ctx = self.context
+        for route, handler, methods, desc in (
+            (
+                "/astrbot_plugin_api_video_parser/groups",
+                self._web_group_list,
+                ["GET"],
+                "获取机器人加入的 QQ 群列表",
+            ),
+            (
+                "/astrbot_plugin_api_video_parser/group_filter",
+                self._web_group_filter_get,
+                ["GET"],
+                "读取群聊黑白名单配置",
+            ),
+            (
+                "/astrbot_plugin_api_video_parser/group_filter/save",
+                self._web_group_filter_save,
+                ["POST"],
+                "保存群聊黑白名单配置",
+            ),
+            (
+                "/astrbot_plugin_api_video_parser/douyin_status",
+                self._web_douyin_login_status,
+                ["GET"],
+                "查询抖音登录状态",
+            ),
+        ):
+            try:
+                ctx.register_web_api(route, handler, methods, desc)
+            except Exception as exc:
+                logger.warning(f"video_parser register_web_api {route} failed: {exc}")
+
+    async def _web_group_list(self):
+        from astrbot.api.web import json_response
+
+        groups = await self._fetch_aiocqhttp_groups()
+        return json_response({"groups": groups, "count": len(groups)})
+
+    async def _web_group_filter_get(self):
+        from astrbot.api.web import json_response
+
+        return json_response(self._group_filter)
+
+    async def _web_group_filter_save(self):
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        if not isinstance(payload, dict):
+            return error_response("invalid payload", status_code=400)
+        cfg = self._default_group_filter()
+        cfg["enabled"] = bool(payload.get("enabled", cfg["enabled"]))
+        mode = str(payload.get("mode") or "blacklist")
+        cfg["mode"] = mode if mode in ("blacklist", "whitelist") else "blacklist"
+        cfg["private_allowed"] = bool(payload.get("private_allowed", True))
+        gids = payload.get("group_ids")
+        if isinstance(gids, list):
+            cfg["group_ids"] = [str(g) for g in gids]
+        if not self._save_group_filter(cfg):
+            return error_response("save failed", status_code=500)
+        return json_response({"saved": True})
+
+    async def _web_douyin_login_status(self):
+        from astrbot.api.web import json_response
+
+        status_url = self.parser_api_base_url.rstrip("/") + DOUYIN_LOGIN_LOGGED_IN_PATH
+        loop = asyncio.get_running_loop()
+        # 查询登录态可能触发常驻浏览器冷启动（约 18s），需放宽超时
+        timeout_ms = max(self.request_timeout_ms, 60000)
+        try:
+            payload, _status = await loop.run_in_executor(
+                None, lambda: request_json(status_url, timeout_ms=timeout_ms)
+            )
+            data = ensure_dict(ensure_dict(payload).get("data"))
+        except Exception as exc:
+            data = {"logged_in": False, "error": str(exc)}
+        return json_response({"logged_in": bool(data.get("logged_in"))})
 
     # ---- 图集处理 ----
 
