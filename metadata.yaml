@@ -1,9 +1,26 @@
 name: astrbot_plugin_api_video_parser
 display_name: ParseVideo 视频图集解析
 short_desc: 解析抖音/快手/B站等 27 个平台的视频与图集分享链接，需自建 parse-video-py 后端服务
-desc: 需自建 parse-video-py 后端服务配合使用（部署见 README）。解析短视频/图集分享链接并发送直链内容。支持 27 个平台（抖音、TikTok、快手、B站、小红书、微博、西瓜视频、微视、皮皮虾、皮皮搞笑、火山小视频、梨视频、好看视频、虎牙、AcFun、美拍、逗拍、全民K歌、6间房、新片场、Twitter/X、最右、央视网、搜狐视频、腾讯视频、绿洲、度小视），每个平台可独立开关。自动获取视频/图集直链直接发送，视频已删除可自定义提示语。新增「/dy登陆」命令：抖音网页版扫码登录，登录后自动保存 Cookie，解决抖音解析风控问题。
+desc: |
+  需自建 parse-video-py 后端服务配合使用（部署见 README，后端仓库 https://github.com/baige778/parse-video-py）。
+  解析短视频/图集分享链接并发送直链内容，支持 27 个平台，每个平台可独立开关。
+  自动获取视频/图集直链直接发送，视频已删除可自定义提示语。新增「/dy登陆」命令：抖音网页版扫码登录，登录后自动保存 Cookie，解决抖音解析风控问题。
+
+  ⚠️ 重要：更新本插件后，请同步更新解析后端
+  本版本依赖后端抖音解析优化，请将后端 parse-video-py 更新到最新版（v0.0.5）：
+  `git pull origin main && docker compose up -d --build`
+  并确认插件配置中的「解析接口地址」（parser_api_base_url）端口正确（默认 8000）。
+
+  ## 更新日志
+
+  ### v0.3.21
+  - 说明文档补充更新日志与后端更新提示。
+
+  ### v0.3.20
+  - 新增独立解析超时 parse_timeout_ms（默认 30000ms），仅作用于解析请求，兼容抖音风控兜底慢路径（20~60s），修复偶发 timed out。
+  - 后端同步升级到 v0.0.5：抖音三级解析、Cookie 直连提速、浏览器常驻复用、video_id 级结果缓存、video_id 复用、结构化日志。
 author: baige778
-version: 0.3.20
+version: 0.3.21
 support_platforms:
   - aiocqhttp
   - wecom

@@ -102,6 +102,14 @@ AstrBot v4 插件，调用外部解析 API 解析短视频/图集分享链接，
 - Docker 部署：`git clone https://github.com/baige778/parse-video-py && cd parse-video-py && docker compose up -d`
 - AstrBot v4.x+
 
+> ⚠️ 重要：更新本插件后，请同步更新解析后端。本插件依赖后端抖音解析优化，请将 parse-video-py 更新到最新版（v0.0.5）：
+>
+> ```bash
+> git pull origin main && docker compose up -d --build
+> ```
+>
+> 并确认插件配置中的「解析接口地址」（`parser_api_base_url`）端口正确（默认 8000）。
+
 ## 📝 使用
 
 在聊天中直接发送任意支持平台的分享链接：
@@ -139,6 +147,15 @@ astrbot_plugin_api_video_parser/
 - 插件仅在收到分享链接时向配置的 API 后端发送请求
 - 无任何遥测、埋点或数据上报
 - 图片和视频内容不经过插件服务器，直接从 CDN 发送到聊天平台
+
+## 🔄 更新日志
+
+| 版本 | 变更 |
+|------|------|
+| v0.3.21 | 说明文档补充更新日志与后端更新提示 |
+| v0.3.20 | 新增独立解析超时 `parse_timeout_ms`（默认 30000ms），仅作用于解析请求，兼容抖音风控兜底慢路径（20~60s），修复偶发 `timed out`；后端同步升级到 v0.0.5（抖音三级解析、Cookie 直连提速、浏览器常驻复用、video_id 级结果缓存、video_id 复用、结构化日志） |
+| v0.3.19 | 视频超过 100MB 自动改用「文件」节点合并转发，绕开 NapCat 转发视频 100MB 上限 |
+| v0.3.18 | 图集改用「合并转发（聊天记录）」发送，标题作者放入聊天记录首条文本节点 |
 
 ## 📄 License
 
