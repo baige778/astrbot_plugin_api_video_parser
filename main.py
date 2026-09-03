@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.21
+AstrBot v4 短视频解析插件 v0.3.23
 """
 from __future__ import annotations
 
@@ -438,7 +438,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.22 initialized: "
+            f"video_parser v0.3.23 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
@@ -532,6 +532,13 @@ class VideoParserPlugin(Star):
             return
 
         data = ensure_dict(result.get("data"))
+        status = str(data.get("status") or "").strip()
+
+        # 后端检测到已登录时不会返回二维码，直接提示，避免误报「返回内容为空」
+        if status == "already_logged_in" or bool(data.get("logged_in")):
+            yield event.plain_result("✅ 抖音已处于登录状态，无需重复扫码")
+            return
+
         qr_base64 = str(data.get("qrcode_base64") or "").strip()
         expires_in = to_positive_int(data.get("expires_in"), self.douyin_login_poll_timeout)
 
