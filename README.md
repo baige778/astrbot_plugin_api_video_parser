@@ -6,6 +6,7 @@ AstrBot v4 插件，调用外部解析 API 解析短视频/图集分享链接，
 
 - 🎬 **视频直链解析** — 发送任意支持平台的分享链接，自动获取视频直链并通过 AstrBot 直接发送
 - 🖼️ **图集/图文解析** — 支持图集分享链接，一次解析后逐张下载并以 base64 发送（绕过抖音等 CDN 防盗链 403）
+- ⚡ **视频分片下载提速** — 文件 ≥4MB 且 CDN 支持 Range 时自动 2~8 路并发分片下载，不支持时自动回退单连接；封面与视频并行下载，整体发送更快
 - 🔍 **智能平台识别** — 一条综合正则自动匹配 27 个平台，无需手动指定
 - 🔌 **平台独立开关** — 27 个平台各自一个开关，可按需关闭不需要的平台
 - 🃏 **QQ 小程序卡片提取** — 自动从 QQ 小程序/JSON 消息中提取隐藏的分享链接
@@ -32,7 +33,7 @@ AstrBot v4 插件，调用外部解析 API 解析短视频/图集分享链接，
 | 西瓜视频 | v.ixigua.com | `platform_xigua` |
 | 微视 | isee.weishi.qq.com | `platform_weishi` |
 | 皮皮虾 | h5.pipix.com | `platform_pipixia` |
-| 皮皮搞笑 | h5.pipigx.com | `platform_pipigx` |
+| 皮皮搞笑 | h5.pipigx.com, share.xiaochuankeji.cn | `platform_pipigx` |
 | 火山小视频 | share.huoshan.com | `platform_huoshan` |
 | 梨视频 | www.pearvideo.com | `platform_pear` |
 | 好看视频 | haokan.baidu.com | `platform_haokan` |
@@ -45,7 +46,7 @@ AstrBot v4 插件，调用外部解析 API 解析短视频/图集分享链接，
 | 新片场 | xinpianchang.com | `platform_xinpianchang` |
 | Twitter/X | x.com, twitter.com, t.co | `platform_twitter` |
 | 最右 | izuiyou.com | `platform_zuiyou` |
-| 央视网 | tv.cctv.com | `platform_cctv` |
+| 央视网 | tv.cctv.com, cctv.com | `platform_cctv` |
 | 搜狐视频 | tv.sohu.com | `platform_sohu` |
 | 腾讯视频 | v.qq.com | `platform_tencent_video` |
 | 绿洲 | weibo.cn | `platform_lvzhou` |
@@ -104,14 +105,6 @@ AstrBot v4 插件，调用外部解析 API 解析短视频/图集分享链接，
 - Docker 部署：`git clone https://github.com/baige778/parse-video-py && cd parse-video-py && docker compose up -d`
 - AstrBot v4.x+
 
-> ⚠️ 重要：更新本插件后，请同步更新解析后端。本插件依赖后端抖音解析优化与登录态查询接口，请将 parse-video-py 更新到最新版（v0.0.9）：
->
-> ```bash
-> git pull origin main && docker compose up -d --build
-> ```
->
-> 并确认插件配置中的「解析接口地址」（`parser_api_base_url`）端口正确（默认 8000）。
-
 ## 📝 使用
 
 在聊天中直接发送任意支持平台的分享链接：
@@ -142,7 +135,7 @@ v0.3.22 起提供 AstrBot Plugin Page 自定义页面。在 WebUI 插件详情�
 2. 发送处理中提示（如有配置）
 3. 调用解析 API 获取视频/图集数据
 4. 图集：逐张下载转 base64，统一以「合并转发（聊天记录）」形式发送全部图片
-5. 视频：探测文件大小 → 检查上限 → 发送封面图（可选）→ 发送视频直链；可配置以「合并转发」形式将封面/标题/视频合并为一条消息
+5. 视频：探测文件大小 → 检查上限 → 封面与视频并行下载（大文件且 CDN 支持 Range 时自动并发分片）→ 发送封面图（可选）→ 发送视频直链；可配置以「合并转发」形式将封面/标题/视频合并为一条消息
 6. 视频已删除：发送自定义提示语
 
 ## 📁 项目结构
@@ -156,6 +149,7 @@ astrbot_plugin_api_video_parser/
 ├── pages/
 │   └── group-filter/      # Plugin Page：群聊黑白名单 + 抖音登录状态
 │       └── index.html
+├── CHANGELOG.md           # 更新日志
 └── README.md
 ```
 
@@ -167,12 +161,7 @@ astrbot_plugin_api_video_parser/
 
 ## 🔄 更新日志
 
-| 版本 | 变更 |
-|------|------|
-| v0.3.22 | 新增抖音登录态失效自动提醒（解析失败检测到登录态失效时提示重新 /dy登陆）；新增 Plugin Page 自定义页面（群聊黑白名单可视化配置 + 抖音登录状态显示）；新增群聊黑白名单过滤（黑/白名单模式 + 私聊单独开关，自动读取机器人 QQ 群）；后端同步升级到 v0.0.9（新增 /douyin/login/logged_in 登录态查询接口） |
-| v0.3.21 | 新增独立解析超时 `parse_timeout_ms`（默认 30000ms），仅作用于解析请求，兼容抖音风控兜底慢路径（20~60s），修复偶发 `timed out`；后端同步升级到 v0.0.5（抖音三级解析、Cookie 直连提速、浏览器常驻复用、video_id 级结果缓存、video_id 复用、结构化日志） |
-| v0.3.19 | 视频超过 100MB 自动改用「文件」节点合并转发，绕开 NapCat 转发视频 100MB 上限 |
-| v0.3.18 | 图集改用「合并转发（聊天记录）」发送，标题作者放入聊天记录首条文本节点 |
+详见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 📄 License
 
