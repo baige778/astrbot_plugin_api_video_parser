@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.23
+AstrBot v4 短视频解析插件 v0.3.24
 """
 from __future__ import annotations
 
 import asyncio
 import base64
+import concurrent.futures
 import json
 import os
 import re
@@ -127,6 +128,14 @@ DEFAULT_LOGIN_POLL_INTERVAL = 3
 
 # NapCat 合并转发（伪造转发）里视频上传的硬上限（字节），超过则改用「文件」节点绕开
 NAPCAT_FORWARD_VIDEO_MAX_BYTES = 100 * 1024 * 1024
+
+# 视频分片下载：文件 >= SEG_MIN_FILE_BYTES 且 CDN 支持 Range 时并发分片，
+# 片数按实际大小自动推导（每片约 SEG_TARGET_BYTES，封顶 SEG_MAX_WORKERS）
+SEG_MIN_FILE_BYTES = 4 * 1024 * 1024
+SEG_TARGET_BYTES = 4 * 1024 * 1024
+SEG_MAX_WORKERS = 8
+# 分片超时按最慢 1MB/s 估算，避免大分片被用户配置的短超时误杀
+SEG_MIN_SPEED_BPS = 1024 * 1024
 
 # 抖音登录接口路径（相对 parser_api_base_url）
 DOUYIN_LOGIN_QRCODE_PATH = "/douyin/login/qrcode"
@@ -288,12 +297,24 @@ def build_remote_file_metadata_requests(file_url: str) -> List[urllib.request.Re
     ]
 
 
-def download_video_to_file(url: str, dest_path: str, timeout_ms: int) -> int:
-    """带防盗链 Referer 流式下载视频到本地文件，返回写入字节数。"""
+def _probe_video_range(url: str, timeout: float) -> Tuple[int, bool]:
+    """Range: bytes=0-0 探测文件总大小与分片支持，失败返回 (0, False)。"""
+    headers = VIDEO_REFERER_HEADERS if _needs_referer(url) else VIDEO_HEADERS
+    req = urllib.request.Request(url, headers={**headers, "Range": "bytes=0-0"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            status = int(getattr(resp, "status", 200))
+            total = parse_remote_file_size_from_headers(resp.headers) or 0
+            return total, status == 206 and total > 0
+    except Exception:
+        return 0, False
+
+
+def _download_video_single(url: str, dest_path: str, timeout: float) -> int:
     headers = VIDEO_REFERER_HEADERS if _needs_referer(url) else VIDEO_HEADERS
     req = urllib.request.Request(url, headers=headers)
     written = 0
-    with urllib.request.urlopen(req, timeout=timeout_ms / 1000.0) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         with open(dest_path, "wb") as fh:
             while True:
                 chunk = resp.read(512 * 1024)
@@ -302,6 +323,59 @@ def download_video_to_file(url: str, dest_path: str, timeout_ms: int) -> int:
                 fh.write(chunk)
                 written += len(chunk)
     return written
+
+
+def _download_video_segment(
+    url: str, dest_path: str, start: int, end: int, timeout: float
+) -> None:
+    headers = VIDEO_REFERER_HEADERS if _needs_referer(url) else VIDEO_HEADERS
+    req = urllib.request.Request(
+        url, headers={**headers, "Range": f"bytes={start}-{end}"}
+    )
+    expected = end - start + 1
+    written = 0
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        if int(getattr(resp, "status", 200)) != 206:
+            raise RuntimeError(f"分段请求未返回 206: {getattr(resp, 'status', 200)}")
+        with open(dest_path, "r+b") as fh:
+            fh.seek(start)
+            while True:
+                chunk = resp.read(512 * 1024)
+                if not chunk:
+                    break
+                fh.write(chunk)
+                written += len(chunk)
+    if written != expected:
+        raise RuntimeError(f"分段不完整: {written}/{expected}")
+
+
+def download_video_to_file(url: str, dest_path: str, timeout_ms: int) -> int:
+    """带防盗链 Referer 下载视频到本地文件；大文件自动并发分片，返回写入字节数。"""
+    timeout = timeout_ms / 1000.0
+    total, supports_range = _probe_video_range(url, min(timeout, 10.0))
+    if not supports_range or total < SEG_MIN_FILE_BYTES:
+        return _download_video_single(url, dest_path, timeout)
+
+    workers = min(SEG_MAX_WORKERS, max(2, -(-total // SEG_TARGET_BYTES)))
+    step = -(-total // workers)
+    ranges = [(s, min(s + step, total) - 1) for s in range(0, total, step)]
+
+    with open(dest_path, "wb") as fh:
+        fh.truncate(total)
+
+    def fetch(start: int, end: int) -> None:
+        seg_timeout = max(15.0, (end - start + 1) / SEG_MIN_SPEED_BPS)
+        try:
+            _download_video_segment(url, dest_path, start, end, seg_timeout)
+        except Exception as exc:
+            logger.warning(f"video_parser segment {start}-{end} retry: {exc}")
+            _download_video_segment(url, dest_path, start, end, seg_timeout)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(ranges)) as pool:
+        futures = [pool.submit(fetch, s, e) for s, e in ranges]
+        for fut in futures:
+            fut.result()
+    return total
 
 
 def _guess_video_suffix(url: str) -> str:
@@ -438,7 +512,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.23 initialized: "
+            f"video_parser v0.3.24 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
@@ -891,16 +965,6 @@ class VideoParserPlugin(Star):
 
         video_url = str(data.get("video_url") or "").strip()
 
-        cover_segment: Optional[Any] = None
-        if self.send_cover:
-            cover_url = _pick_first_str(data, "cover_url", "cover", "thumbnail", "thumb", "poster")
-            if cover_url:
-                segment = await self._cover_segment(cover_url)
-                if self.video_merge_message:
-                    cover_segment = segment
-                elif segment is not None:
-                    yield event.chain_result([segment])
-
         try:
             file_size = await self._get_remote_file_size(video_url)
         except Exception as exc:
@@ -923,16 +987,38 @@ class VideoParserPlugin(Star):
         tmp_path = os.path.join(
             temp_dir, f"vp_{int(time.time())}_{os.getpid()}{_guess_video_suffix(video_url)}"
         )
-        try:
-            downloaded = await loop.run_in_executor(
+
+        cover_url: Optional[str] = None
+        if self.send_cover:
+            cover_url = _pick_first_str(data, "cover_url", "cover", "thumbnail", "thumb", "poster")
+
+        # 封面下载与视频下载并行：非合并模式封面就绪立即发送，合并模式暂存随转发一起发
+        download_task = asyncio.ensure_future(
+            loop.run_in_executor(
                 None,
                 lambda: download_video_to_file(
                     video_url, tmp_path, self.request_timeout_ms
                 ),
             )
+        )
+        cover_task = (
+            asyncio.ensure_future(self._cover_segment(cover_url)) if cover_url else None
+        )
+
+        cover_segment: Optional[Any] = None
+        if cover_task is not None and not self.video_merge_message:
+            segment = await cover_task
+            cover_task = None
+            if segment is not None:
+                yield event.chain_result([segment])
+
+        try:
+            downloaded = await download_task
             if downloaded <= 0:
                 raise RuntimeError("下载到 0 字节")
         except Exception as exc:
+            if cover_task is not None:
+                cover_task.cancel()
             logger.warning(f"video_parser video download failed: {exc}")
             try:
                 os.remove(tmp_path)
@@ -940,6 +1026,9 @@ class VideoParserPlugin(Star):
                 pass
             yield event.plain_result("视频下载失败，无法直接发送，请尝试点击源链接观看。")
             return
+
+        if cover_task is not None:
+            cover_segment = await cover_task
 
         title = str(data.get("title") or "").strip()
         author = str(ensure_dict(data.get("author")).get("name") or "").strip()
