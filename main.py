@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.24
+AstrBot v4 短视频解析插件 v0.3.25
 """
 from __future__ import annotations
 
@@ -154,6 +154,12 @@ DOUYIN_LOGIN_EXPIRED_KEYWORDS = (
 
 # 群聊黑白名单配置文件（存放于插件数据目录）
 GROUP_FILTER_FILENAME = "group_filter.json"
+
+# QQ 官方机器人独立设置配置文件（存放于插件数据目录）
+QQ_OFFICIAL_SETTINGS_FILENAME = "qq_official_settings.json"
+
+# QQ 官方机器人平台名（官方 API 不支持合并转发，走独立逐条发送逻辑）
+QQ_OFFICIAL_PLATFORM_NAMES = {"qq_official", "qq_official_webhook"}
 
 IMG_DOWNLOAD_HEADERS = {
     "User-Agent": (
@@ -504,6 +510,8 @@ class VideoParserPlugin(Star):
 
         # 群聊黑白名单配置（本地 JSON，Plugin Page 读写）
         self._group_filter = self._load_group_filter()
+        # QQ 官方机器人独立设置（本地 JSON，Plugin Page 读写）
+        self._qq_official = self._load_qq_official_settings()
         self._register_web_apis()
 
         # 打印已启用的平台
@@ -512,7 +520,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.24 initialized: "
+            f"video_parser v0.3.25 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
@@ -548,18 +556,31 @@ class VideoParserPlugin(Star):
             )
             return
 
-        if self.send_processing_message:
+        # QQ 官方机器人走独立发送逻辑（官方 API 不支持合并转发），
+        # 其内容开关独立于全局配置，互不影响。
+        is_official = self._is_qq_official_event(event)
+
+        if is_official:
+            if self._qq_official.get("send_processing", True):
+                yield event.plain_result(self.processing_message)
+        elif self.send_processing_message:
             yield event.plain_result(self.processing_message)
 
         try:
             video_data = await self.parse_video_share_url(share_url)
 
             if ensure_list(video_data.get("images")):
-                async for result in self._handle_album(event, video_data):
+                album_handler = (
+                    self._handle_album_official if is_official else self._handle_album
+                )
+                async for result in album_handler(event, video_data):
                     yield result
                 return
             if str(video_data.get("video_url") or "").strip():
-                async for result in self._handle_video(event, video_data):
+                video_handler = (
+                    self._handle_video_official if is_official else self._handle_video
+                )
+                async for result in video_handler(event, video_data):
                     yield result
                 return
 
@@ -766,6 +787,48 @@ class VideoParserPlugin(Star):
             return in_list
         return not in_list
 
+    # ---- QQ 官方机器人独立设置 ----
+
+    @staticmethod
+    def _is_qq_official_event(event: AstrMessageEvent) -> bool:
+        getter = getattr(event, "get_platform_name", None)
+        name = ""
+        if callable(getter):
+            try:
+                name = str(getter() or "").strip()
+            except Exception:
+                name = ""
+        return name in QQ_OFFICIAL_PLATFORM_NAMES
+
+    @staticmethod
+    def _default_qq_official_settings() -> Dict[str, Any]:
+        return {"send_cover": True, "send_title": True, "send_processing": True}
+
+    def _qq_official_path(self) -> Path:
+        return self._group_filter_data_dir() / QQ_OFFICIAL_SETTINGS_FILENAME
+
+    def _load_qq_official_settings(self) -> Dict[str, Any]:
+        cfg = self._default_qq_official_settings()
+        try:
+            raw = json.loads(self._qq_official_path().read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                for key in cfg:
+                    cfg[key] = bool(raw.get(key, cfg[key]))
+        except Exception as exc:
+            logger.warning(f"video_parser load qq official settings failed: {exc}")
+        return cfg
+
+    def _save_qq_official_settings(self, cfg: Dict[str, Any]) -> bool:
+        try:
+            self._qq_official_path().write_text(
+                json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            self._qq_official = cfg
+            return True
+        except Exception as exc:
+            logger.error(f"video_parser save qq official settings failed: {exc}")
+            return False
+
     async def _fetch_aiocqhttp_groups(self) -> List[Dict[str, str]]:
         """通过 aiocqhttp 平台适配器调用 OneBot get_group_list 拉取群列表。"""
         groups: List[Dict[str, str]] = []
@@ -837,6 +900,18 @@ class VideoParserPlugin(Star):
                 ["GET"],
                 "查询抖音登录状态",
             ),
+            (
+                "/astrbot_plugin_api_video_parser/qq_official",
+                self._web_qq_official_get,
+                ["GET"],
+                "读取QQ官方机器人独立设置",
+            ),
+            (
+                "/astrbot_plugin_api_video_parser/qq_official/save",
+                self._web_qq_official_save,
+                ["POST"],
+                "保存QQ官方机器人独立设置",
+            ),
         ):
             try:
                 ctx.register_web_api(route, handler, methods, desc)
@@ -887,6 +962,24 @@ class VideoParserPlugin(Star):
         except Exception as exc:
             data = {"logged_in": False, "error": str(exc)}
         return json_response({"logged_in": bool(data.get("logged_in"))})
+
+    async def _web_qq_official_get(self):
+        from astrbot.api.web import json_response
+
+        return json_response(self._qq_official)
+
+    async def _web_qq_official_save(self):
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        if not isinstance(payload, dict):
+            return error_response("invalid payload", status_code=400)
+        cfg = self._default_qq_official_settings()
+        for key in cfg:
+            cfg[key] = bool(payload.get(key, cfg[key]))
+        if not self._save_qq_official_settings(cfg):
+            return error_response("save failed", status_code=500)
+        return json_response({"saved": True})
 
     # ---- 图集处理 ----
 
@@ -939,6 +1032,50 @@ class VideoParserPlugin(Star):
 
         if nodes:
             yield event.chain_result([Nodes(nodes)])
+        if sent == 0:
+            yield event.plain_result("图集解析成功，但所有图片发送失败")
+
+    async def _handle_album_official(self, event: AstrMessageEvent, data: Dict[str, Any]):
+        """QQ 官方机器人图集：不使用合并转发，按独立开关逐条发送。"""
+        cfg = self._qq_official
+        images = ensure_list(data.get("images"))
+        title = str(data.get("title") or "").strip()
+        author = str(ensure_dict(data.get("author")).get("name") or "").strip()
+        total = len(images)
+
+        logger.info(
+            f"video_parser album (official): {total} images, "
+            f"title={title[:30] if title else 'N/A'}"
+        )
+
+        if cfg.get("send_title", True) and (title or author):
+            yield event.plain_result(
+                f"标题: {empty_fallback(title, DEFAULT_UNTITLED_TITLE)}\n"
+                f"作者: {empty_fallback(author, DEFAULT_UNKNOWN_AUTHOR)}"
+            )
+
+        loop = asyncio.get_running_loop()
+        sent = 0
+        for index, image in enumerate(images, start=1):
+            image_url = str(image.get("url") or "").strip()
+            if not image_url:
+                logger.warning(f"video_parser image {index} has no url, skipping")
+                continue
+            try:
+                b64 = await loop.run_in_executor(
+                    None, lambda u=image_url: image_url_to_base64(u, self.request_timeout_ms)
+                )
+                image_segment = Image(file=b64)
+            except Exception as exc:
+                logger.warning(f"video_parser image {index} download failed: {exc}")
+                try:
+                    image_segment = Image.fromURL(image_url)
+                except Exception as exc2:
+                    logger.warning(f"video_parser image {index} url fallback also failed: {exc2}")
+                    continue
+            yield event.chain_result([image_segment])
+            sent += 1
+
         if sent == 0:
             yield event.plain_result("图集解析成功，但所有图片发送失败")
 
@@ -1073,6 +1210,82 @@ class VideoParserPlugin(Star):
             yield event.chain_result([Video.fromFileSystem(tmp_path)])
 
         # 延迟清理临时文件，给 napcat 留出上传时间
+        asyncio.create_task(_delayed_remove(tmp_path))
+
+    async def _handle_video_official(self, event: AstrMessageEvent, data: Dict[str, Any]):
+        """QQ 官方机器人视频：不使用合并转发，按独立开关逐条发送。"""
+        cfg = self._qq_official
+        video_url = str(data.get("video_url") or "").strip()
+
+        try:
+            file_size = await self._get_remote_file_size(video_url)
+        except Exception as exc:
+            logger.warning(f"video_parser probe size failed (official): {exc}")
+            yield event.plain_result("获取视频大小失败，无法直接发送，请尝试点击源链接观看。")
+            return
+
+        threshold = self.video_max_size_mb * 1024 * 1024
+        if file_size > threshold:
+            yield event.plain_result(
+                f"视频大小为 {file_size / (1024 * 1024):.2f}MB，"
+                f"超过 {self.video_max_size_mb}MB 限制，请尝试点击源链接观看。"
+            )
+            return
+
+        loop = asyncio.get_running_loop()
+        temp_dir = _get_video_temp_dir()
+        _cleanup_stale_videos(temp_dir)
+        tmp_path = os.path.join(
+            temp_dir, f"vp_{int(time.time())}_{os.getpid()}{_guess_video_suffix(video_url)}"
+        )
+
+        cover_url: Optional[str] = None
+        if cfg.get("send_cover", True):
+            cover_url = _pick_first_str(data, "cover_url", "cover", "thumbnail", "thumb", "poster")
+
+        # 封面与视频并行下载，封面就绪立即单独发送（官方机器人不合并）
+        download_task = asyncio.ensure_future(
+            loop.run_in_executor(
+                None,
+                lambda: download_video_to_file(
+                    video_url, tmp_path, self.request_timeout_ms
+                ),
+            )
+        )
+        cover_task = (
+            asyncio.ensure_future(self._cover_segment(cover_url)) if cover_url else None
+        )
+
+        if cover_task is not None:
+            segment = await cover_task
+            if segment is not None:
+                yield event.chain_result([segment])
+
+        try:
+            downloaded = await download_task
+            if downloaded <= 0:
+                raise RuntimeError("下载到 0 字节")
+        except Exception as exc:
+            logger.warning(f"video_parser video download failed (official): {exc}")
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            yield event.plain_result("视频下载失败，无法直接发送，请尝试点击源链接观看。")
+            return
+
+        if cfg.get("send_title", True):
+            title = str(data.get("title") or "").strip()
+            author = str(ensure_dict(data.get("author")).get("name") or "").strip()
+            if title or author:
+                yield event.plain_result(
+                    f"标题: {empty_fallback(title, DEFAULT_UNTITLED_TITLE)}\n"
+                    f"作者: {empty_fallback(author, DEFAULT_UNKNOWN_AUTHOR)}"
+                )
+
+        yield event.chain_result([Video.fromFileSystem(tmp_path)])
+
+        # 延迟清理临时文件，给适配器留出上传时间
         asyncio.create_task(_delayed_remove(tmp_path))
 
     # ---- 核心解析逻辑 ----

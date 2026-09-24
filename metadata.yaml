@@ -13,6 +13,11 @@ desc: |
 
   ## 更新日志
 
+  ### v0.3.25
+  - 插件页面新增「QQ 官方机器人设置」标签页：与「群聊黑白名单」在同一页面内点击切换，两套设置互不影响。
+  - QQ 官方机器人（qq_official / qq_official_webhook）改用独立解析发送逻辑：官方 API 不支持合并转发，现按开关逐条单独发送，不再组装 Nodes 导致消息被丢弃。
+  - 新增三个独立开关（仅作用于 QQ 官方机器人，不影响其他平台）：发送封面图、发送标题、发送处理中提示。
+
   ### v0.3.24
   - 视频下载提速：文件 ≥4MB 且 CDN 支持 Range 时自动 2~8 路并发分片下载（片数按实际大小推导、每片独立超时、失败自动重试一次、不支持 Range 自动回退单连接），大视频首次下载耗时显著降低
   - 封面下载与视频下载并行化：非合并模式封面仍就绪即发，合并模式封面不再串行等待视频，整体发送更快
@@ -30,12 +35,14 @@ desc: |
   - 新增独立解析超时 parse_timeout_ms（默认 30000ms），仅作用于解析请求，兼容抖音风控兜底慢路径（20~60s），修复偶发 timed out。
   - 后端同步升级到 v0.0.5：抖音三级解析、Cookie 直连提速、浏览器常驻复用、video_id 级结果缓存、video_id 复用、结构化日志。
 author: baige778
-version: 0.3.24
+version: 0.3.25
 support_platforms:
   - aiocqhttp
   - wecom
   - telegram
   - weixin_oc
+  - qq_official
+  - qq_official_webhook
 repo: https://github.com/baige778/astrbot_plugin_api_video_parser
 tags:
   - 视频解析

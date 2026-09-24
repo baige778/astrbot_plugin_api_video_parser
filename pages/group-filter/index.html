@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>视频解析 · 黑白名单设置</title>
+<title>视频解析 · 插件设置</title>
 <style>
   :root {
     --bg: #f4f5f7;
@@ -17,7 +17,7 @@
     --ok: #10b981;
     --warn: #f59e0b;
     --radius: 12px;
-    --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+    --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 2px rgba(16, 24, 40, 0.06);
   }
   [data-theme="dark"] {
     --bg: #14161a;
@@ -27,7 +27,7 @@
     --text-sub: #9aa2ad;
     --accent: #60a5fa;
     --accent-weak: #1e293b;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -43,7 +43,15 @@
   }
   .wrap { max-width: 820px; margin: 0 auto; }
   h1 { font-size: 20px; margin: 0 0 4px; }
-  .subtitle { color: var(--text-sub); margin: 0 0 24px; font-size: 13px; }
+  .subtitle { color: var(--text-sub); margin: 0 0 20px; font-size: 13px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+  .tabs button {
+    flex: 1; border: 1px solid var(--border); background: var(--card); color: var(--text-sub);
+    padding: 10px 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600;
+    transition: 0.15s; box-shadow: var(--shadow);
+  }
+  .tabs button:hover { color: var(--accent); border-color: var(--accent); }
+  .tabs button.active { color: var(--accent); border-color: var(--accent); background: var(--accent-weak); }
   .card {
     background: var(--card);
     border: 1px solid var(--border);
@@ -129,82 +137,144 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>视频解析 · 群聊黑白名单</h1>
-  <p class="subtitle">控制机器人对视频/图集分享链接的解析权限，并查看抖音登录状态。</p>
+  <h1>视频解析 · 插件设置</h1>
+  <p class="subtitle">群聊黑白名单与 QQ 官方机器人发送设置，点击标签切换，两套设置互不影响。</p>
 
-  <div class="card">
-    <h2><span class="dot"></span>抖音登录状态</h2>
-    <div class="row">
-      <div>
-        <div class="label" id="login-status-text">查询中…</div>
-        <div class="hint" id="login-status-hint">正在向解析后端查询登录态</div>
+  <div class="tabs" id="tabs">
+    <button data-tab="filter" class="active">群聊黑白名单</button>
+    <button data-tab="official">QQ 官方机器人设置</button>
+  </div>
+
+  <div id="panel-filter">
+    <div class="card">
+      <h2><span class="dot"></span>抖音登录状态</h2>
+      <div class="row">
+        <div>
+          <div class="label" id="login-status-text">查询中…</div>
+          <div class="hint" id="login-status-hint">正在向解析后端查询登录态</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="status-badge loading" id="login-badge"><span class="spinner"></span>查询中</span>
+          <button class="btn small" id="btn-status-refresh">刷新</button>
+        </div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;">
-        <span class="status-badge loading" id="login-badge"><span class="spinner"></span>查询中</span>
-        <button class="btn small" id="btn-status-refresh">刷新</button>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span>群聊黑白名单</h2>
+      <div class="banner info" id="banner"></div>
+      <div class="banner err" id="banner-err"></div>
+
+      <div class="field">
+        <div class="row">
+          <div>
+            <div class="label">启用群聊黑白名单</div>
+            <div class="hint">开启后，只有符合规则的会话才能调用视频解析。</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="filter-enabled" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="row">
+          <div>
+            <div class="label">过滤模式</div>
+            <div class="hint">黑名单：勾选的群被禁止解析；白名单：仅勾选的群允许解析。</div>
+          </div>
+          <div class="seg" id="mode-seg">
+            <button data-mode="blacklist">黑名单</button>
+            <button data-mode="whitelist">白名单</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="row">
+          <div>
+            <div class="label">私聊消息允许解析</div>
+            <div class="hint">关闭后，私聊（非群聊）将无法触发视频解析。</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="private-allowed" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="label" style="margin-bottom:8px;">群聊名单</div>
+        <div class="toolbar">
+          <button class="btn small" id="btn-select-all">全选</button>
+          <button class="btn small" id="btn-select-none">全不选</button>
+          <button class="btn small" id="btn-refresh-groups">刷新群列表</button>
+        </div>
+        <div class="group-list" id="group-list">
+          <div class="empty" id="group-empty">加载中…</div>
+        </div>
+      </div>
+
+      <div class="row" style="justify-content:flex-end;margin-top:20px;">
+        <button class="btn" id="btn-reset">重置</button>
+        <button class="btn primary" id="btn-save">保存设置</button>
       </div>
     </div>
   </div>
 
-  <div class="card">
-    <h2><span class="dot"></span>群聊黑白名单</h2>
-    <div class="banner info" id="banner"></div>
-    <div class="banner err" id="banner-err"></div>
-
-    <div class="field">
-      <div class="row">
-        <div>
-          <div class="label">启用群聊黑白名单</div>
-          <div class="hint">开启后，只有符合规则的会话才能调用视频解析。</div>
-        </div>
-        <label class="switch">
-          <input type="checkbox" id="filter-enabled" />
-          <span class="slider"></span>
-        </label>
+  <div id="panel-official" hidden>
+    <div class="card">
+      <h2><span class="dot"></span>QQ 官方机器人发送设置</h2>
+      <div class="banner info" id="q-banner"></div>
+      <div class="banner err" id="q-banner-err"></div>
+      <div class="hint" style="margin:-8px 0 16px;">
+        以下开关仅作用于 QQ 官方机器人（qq_official / qq_official_webhook）：官方接口不支持合并转发，解析结果按下列开关逐条单独发送。其他平台（NapCat/OneBot 等）仍按插件主设置发送，不受影响。
       </div>
-    </div>
 
-    <div class="field">
-      <div class="row">
-        <div>
-          <div class="label">过滤模式</div>
-          <div class="hint">黑名单：勾选的群被禁止解析；白名单：仅勾选的群允许解析。</div>
-        </div>
-        <div class="seg" id="mode-seg">
-          <button data-mode="blacklist">黑名单</button>
-          <button data-mode="whitelist">白名单</button>
+      <div class="field">
+        <div class="row">
+          <div>
+            <div class="label">发送封面图</div>
+            <div class="hint">解析成功后先发送视频封面图片，再发送视频。</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="q-cover" />
+            <span class="slider"></span>
+          </label>
         </div>
       </div>
-    </div>
 
-    <div class="field">
-      <div class="row">
-        <div>
-          <div class="label">私聊消息允许解析</div>
-          <div class="hint">关闭后，私聊（非群聊）将无法触发视频解析。</div>
+      <div class="field">
+        <div class="row">
+          <div>
+            <div class="label">发送标题</div>
+            <div class="hint">发送视频标题与作者文字消息。</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="q-title" />
+            <span class="slider"></span>
+          </label>
         </div>
-        <label class="switch">
-          <input type="checkbox" id="private-allowed" />
-          <span class="slider"></span>
-        </label>
       </div>
-    </div>
 
-    <div class="field">
-      <div class="label" style="margin-bottom:8px;">群聊名单</div>
-      <div class="toolbar">
-        <button class="btn small" id="btn-select-all">全选</button>
-        <button class="btn small" id="btn-select-none">全不选</button>
-        <button class="btn small" id="btn-refresh-groups">刷新群列表</button>
+      <div class="field">
+        <div class="row">
+          <div>
+            <div class="label">发送处理中提示</div>
+            <div class="hint">开始解析前先发送「处理中」提示语（提示语内容沿用插件主设置）。</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="q-processing" />
+            <span class="slider"></span>
+          </label>
+        </div>
       </div>
-      <div class="group-list" id="group-list">
-        <div class="empty" id="group-empty">加载中…</div>
-      </div>
-    </div>
 
-    <div class="row" style="justify-content:flex-end;margin-top:20px;">
-      <button class="btn" id="btn-reset">重置</button>
-      <button class="btn primary" id="btn-save">保存设置</button>
+      <div class="row" style="justify-content:flex-end;margin-top:20px;">
+        <button class="btn" id="q-btn-reset">重置</button>
+        <button class="btn primary" id="q-btn-save">保存设置</button>
+      </div>
     </div>
   </div>
 </div>
@@ -213,6 +283,9 @@
 const bridge = window.AstrBotPluginPage;
 
 const els = {
+  tabs: document.getElementById("tabs"),
+  panelFilter: document.getElementById("panel-filter"),
+  panelOfficial: document.getElementById("panel-official"),
   statusText: document.getElementById("login-status-text"),
   statusHint: document.getElementById("login-status-hint"),
   statusBadge: document.getElementById("login-badge"),
@@ -229,6 +302,13 @@ const els = {
   btnRefreshGroups: document.getElementById("btn-refresh-groups"),
   btnReset: document.getElementById("btn-reset"),
   btnSave: document.getElementById("btn-save"),
+  qBanner: document.getElementById("q-banner"),
+  qBannerErr: document.getElementById("q-banner-err"),
+  qCover: document.getElementById("q-cover"),
+  qTitle: document.getElementById("q-title"),
+  qProcessing: document.getElementById("q-processing"),
+  qBtnReset: document.getElementById("q-btn-reset"),
+  qBtnSave: document.getElementById("q-btn-save"),
 };
 
 let state = {
@@ -240,11 +320,22 @@ let state = {
 let allGroups = [];
 let dirty = false;
 
+let qState = { send_cover: true, send_title: true, send_processing: true };
+
 function showBanner(msg, isErr) {
   els.banner.classList.remove("show");
   els.bannerErr.classList.remove("show");
   if (!msg) return;
   const target = isErr ? els.bannerErr : els.banner;
+  target.textContent = msg;
+  target.classList.add("show");
+}
+
+function showQBanner(msg, isErr) {
+  els.qBanner.classList.remove("show");
+  els.qBannerErr.classList.remove("show");
+  if (!msg) return;
+  const target = isErr ? els.qBannerErr : els.qBanner;
   target.textContent = msg;
   target.classList.add("show");
 }
@@ -350,7 +441,34 @@ function syncControls() {
   });
 }
 
+async function loadOfficial() {
+  try {
+    const data = await bridge.apiGet("qq_official");
+    qState.send_cover = data.send_cover !== false;
+    qState.send_title = data.send_title !== false;
+    qState.send_processing = data.send_processing !== false;
+  } catch (err) {
+    showQBanner("读取配置失败：" + (err && err.message ? err.message : err), true);
+  }
+  syncQControls();
+}
+
+function syncQControls() {
+  els.qCover.checked = qState.send_cover;
+  els.qTitle.checked = qState.send_title;
+  els.qProcessing.checked = qState.send_processing;
+}
+
 function bindEvents() {
+  els.tabs.addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    [...els.tabs.querySelectorAll("button")].forEach((b) => {
+      b.classList.toggle("active", b === btn);
+    });
+    els.panelFilter.hidden = btn.dataset.tab !== "filter";
+    els.panelOfficial.hidden = btn.dataset.tab !== "official";
+  });
   els.enabled.addEventListener("change", () => { dirty = true; });
   els.privateAllowed.addEventListener("change", () => { dirty = true; });
   els.modeSeg.addEventListener("click", (e) => {
@@ -379,6 +497,11 @@ function bindEvents() {
     showBanner("已重置为保存的配置");
   });
   els.btnSave.addEventListener("click", save);
+  els.qBtnReset.addEventListener("click", async () => {
+    await loadOfficial();
+    showQBanner("已重置为保存的配置");
+  });
+  els.qBtnSave.addEventListener("click", saveOfficial);
 }
 
 async function save() {
@@ -406,10 +529,30 @@ async function save() {
   }
 }
 
+async function saveOfficial() {
+  const payload = {
+    send_cover: els.qCover.checked,
+    send_title: els.qTitle.checked,
+    send_processing: els.qProcessing.checked,
+  };
+  els.qBtnSave.disabled = true;
+  els.qBtnSave.textContent = "保存中…";
+  try {
+    await bridge.apiPost("qq_official/save", payload);
+    qState = { ...payload };
+    showQBanner("已保存，新设置立即生效。");
+  } catch (err) {
+    showQBanner("保存失败：" + (err && err.message ? err.message : err), true);
+  } finally {
+    els.qBtnSave.disabled = false;
+    els.qBtnSave.textContent = "保存设置";
+  }
+}
+
 (async function init() {
   try { await bridge.ready(); } catch (err) { /* bridge may already be ready */ }
   bindEvents();
-  await Promise.all([loadFilter(), loadGroups(), loadStatus()]);
+  await Promise.all([loadFilter(), loadGroups(), loadStatus(), loadOfficial()]);
 })();
 </script>
 </body>
