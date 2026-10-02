@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.25
+AstrBot v4 短视频解析插件 v0.3.26
 """
 from __future__ import annotations
 
@@ -520,7 +520,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.25 initialized: "
+            f"video_parser v0.3.26 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
@@ -983,6 +983,40 @@ class VideoParserPlugin(Star):
 
     # ---- 图集处理 ----
 
+    async def _live_photo_media_segment(
+        self, live_photo_url: str, index: int, allow_file_fallback: bool
+    ) -> Optional[Any]:
+        """下载动图（实况图）mp4 并返回视频段；失败返回 None（调用方回退静图）。"""
+        loop = asyncio.get_running_loop()
+        temp_dir = _get_video_temp_dir()
+        _cleanup_stale_videos(temp_dir)
+        tmp_path = os.path.join(
+            temp_dir,
+            f"vp_{int(time.time())}_{os.getpid()}_live{index}{_guess_video_suffix(live_photo_url)}",
+        )
+        try:
+            downloaded = await loop.run_in_executor(
+                None,
+                lambda: download_video_to_file(
+                    live_photo_url, tmp_path, self.request_timeout_ms
+                ),
+            )
+            if downloaded <= 0:
+                raise RuntimeError("下载到 0 字节")
+        except Exception as exc:
+            logger.warning(f"video_parser live photo {index} download failed: {exc}")
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            return None
+        if allow_file_fallback and downloaded > NAPCAT_FORWARD_VIDEO_MAX_BYTES:
+            segment: Any = File(name=os.path.basename(tmp_path), file=tmp_path)
+        else:
+            segment = Video.fromFileSystem(tmp_path)
+        asyncio.create_task(_delayed_remove(tmp_path))
+        return segment
+
     async def _handle_album(self, event: AstrMessageEvent, data: Dict[str, Any]):
         images = ensure_list(data.get("images"))
         title = str(data.get("title") or "").strip()
@@ -1006,9 +1040,23 @@ class VideoParserPlugin(Star):
 
         for index, image in enumerate(images, start=1):
             image_url = str(image.get("url") or "").strip()
-            if not image_url:
+            live_photo_url = str(image.get("live_photo_url") or "").strip()
+            if not image_url and not live_photo_url:
                 logger.warning(f"video_parser image {index} has no url, skipping")
                 continue
+
+            # 动图（实况图）优先以视频形式发送，下载失败回退静图
+            if live_photo_url:
+                live_segment = await self._live_photo_media_segment(
+                    live_photo_url, index, allow_file_fallback=True
+                )
+                if live_segment is not None:
+                    content: List[Any] = [live_segment]
+                    if total > 1:
+                        content.append(Plain(f"第 {index}/{total} 张（动图）"))
+                    nodes.append(Node(uin=uin, name=node_name, content=content))
+                    sent += 1
+                    continue
 
             try:
                 b64 = await loop.run_in_executor(
@@ -1024,7 +1072,7 @@ class VideoParserPlugin(Star):
                     nodes.append(Node(uin=uin, name=node_name, content=[Plain(f"第 {index} 张图片发送失败")]))
                     continue
 
-            content: List[Any] = [image_segment]
+            content = [image_segment]
             if total > 1:
                 content.append(Plain(f"第 {index}/{total} 张"))
             nodes.append(Node(uin=uin, name=node_name, content=content))
@@ -1058,9 +1106,21 @@ class VideoParserPlugin(Star):
         sent = 0
         for index, image in enumerate(images, start=1):
             image_url = str(image.get("url") or "").strip()
-            if not image_url:
+            live_photo_url = str(image.get("live_photo_url") or "").strip()
+            if not image_url and not live_photo_url:
                 logger.warning(f"video_parser image {index} has no url, skipping")
                 continue
+
+            # 动图（实况图）优先以视频形式发送，下载失败回退静图
+            if live_photo_url:
+                live_segment = await self._live_photo_media_segment(
+                    live_photo_url, index, allow_file_fallback=False
+                )
+                if live_segment is not None:
+                    yield event.chain_result([live_segment])
+                    sent += 1
+                    continue
+
             try:
                 b64 = await loop.run_in_executor(
                     None, lambda u=image_url: image_url_to_base64(u, self.request_timeout_ms)
