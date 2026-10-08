@@ -143,6 +143,7 @@
   <div class="tabs" id="tabs">
     <button data-tab="filter" class="active">群聊黑白名单</button>
     <button data-tab="official">QQ 官方机器人设置</button>
+    <button data-tab="feature">功能设置</button>
   </div>
 
   <div id="panel-filter">
@@ -277,6 +278,36 @@
       </div>
     </div>
   </div>
+
+  <div id="panel-feature" hidden>
+    <div class="card">
+      <h2><span class="dot"></span>ffmpeg 视频压缩</h2>
+      <div class="banner info" id="f-banner"></div>
+      <div class="banner err" id="f-banner-err"></div>
+
+      <div class="field">
+        <div class="row">
+          <div>
+            <div class="label">对 NapCat/aiocqhttp 启用 ffmpeg 压缩</div>
+            <div class="hint">QQ 官方机器人始终自动压缩超限视频（无需开关）。此开关控制 NapCat/aiocqhttp 等其他平台是否也使用 ffmpeg 压缩超限视频，保持视频形式发送而非转为文件。</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="f-ffmpeg" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="hint">当视频文件超过发送限制时，使用ffmpeg降低码率压缩至限制以内，保持视频格式发送而非转为文件。需要AstrBot容器内已安装ffmpeg。</div>
+      </div>
+
+      <div class="row" style="justify-content:flex-end;margin-top:20px;">
+        <button class="btn" id="f-btn-reset">重置</button>
+        <button class="btn primary" id="f-btn-save">保存设置</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script type="module">
@@ -286,6 +317,7 @@ const els = {
   tabs: document.getElementById("tabs"),
   panelFilter: document.getElementById("panel-filter"),
   panelOfficial: document.getElementById("panel-official"),
+  panelFeature: document.getElementById("panel-feature"),
   statusText: document.getElementById("login-status-text"),
   statusHint: document.getElementById("login-status-hint"),
   statusBadge: document.getElementById("login-badge"),
@@ -309,6 +341,11 @@ const els = {
   qProcessing: document.getElementById("q-processing"),
   qBtnReset: document.getElementById("q-btn-reset"),
   qBtnSave: document.getElementById("q-btn-save"),
+  fBanner: document.getElementById("f-banner"),
+  fBannerErr: document.getElementById("f-banner-err"),
+  fFfmpeg: document.getElementById("f-ffmpeg"),
+  fBtnReset: document.getElementById("f-btn-reset"),
+  fBtnSave: document.getElementById("f-btn-save"),
 };
 
 let state = {
@@ -321,6 +358,8 @@ let allGroups = [];
 let dirty = false;
 
 let qState = { send_cover: true, send_title: true, send_processing: true };
+
+let fState = { ffmpeg_enabled: true };
 
 function showBanner(msg, isErr) {
   els.banner.classList.remove("show");
@@ -336,6 +375,15 @@ function showQBanner(msg, isErr) {
   els.qBannerErr.classList.remove("show");
   if (!msg) return;
   const target = isErr ? els.qBannerErr : els.qBanner;
+  target.textContent = msg;
+  target.classList.add("show");
+}
+
+function showFeatureBanner(msg, isErr) {
+  els.fBanner.classList.remove("show");
+  els.fBannerErr.classList.remove("show");
+  if (!msg) return;
+  const target = isErr ? els.fBannerErr : els.fBanner;
   target.textContent = msg;
   target.classList.add("show");
 }
@@ -459,6 +507,20 @@ function syncQControls() {
   els.qProcessing.checked = qState.send_processing;
 }
 
+async function loadFeature() {
+  try {
+    const data = await bridge.apiGet("feature_settings");
+    fState.ffmpeg_enabled = data.ffmpeg_enabled !== false;
+  } catch (err) {
+    showFeatureBanner("读取配置失败：" + (err && err.message ? err.message : err), true);
+  }
+  syncFeatureControls();
+}
+
+function syncFeatureControls() {
+  els.fFfmpeg.checked = fState.ffmpeg_enabled;
+}
+
 function bindEvents() {
   els.tabs.addEventListener("click", (e) => {
     const btn = e.target.closest("button");
@@ -468,6 +530,7 @@ function bindEvents() {
     });
     els.panelFilter.hidden = btn.dataset.tab !== "filter";
     els.panelOfficial.hidden = btn.dataset.tab !== "official";
+    els.panelFeature.hidden = btn.dataset.tab !== "feature";
   });
   els.enabled.addEventListener("change", () => { dirty = true; });
   els.privateAllowed.addEventListener("change", () => { dirty = true; });
@@ -502,6 +565,11 @@ function bindEvents() {
     showQBanner("已重置为保存的配置");
   });
   els.qBtnSave.addEventListener("click", saveOfficial);
+  els.fBtnReset.addEventListener("click", async () => {
+    await loadFeature();
+    showFeatureBanner("已重置为保存的配置");
+  });
+  els.fBtnSave.addEventListener("click", saveFeature);
 }
 
 async function save() {
@@ -549,10 +617,28 @@ async function saveOfficial() {
   }
 }
 
+async function saveFeature() {
+  const payload = {
+    ffmpeg_enabled: els.fFfmpeg.checked,
+  };
+  els.fBtnSave.disabled = true;
+  els.fBtnSave.textContent = "保存中…";
+  try {
+    await bridge.apiPost("feature_settings/save", payload);
+    fState = { ...payload };
+    showFeatureBanner("已保存，新设置立即生效。");
+  } catch (err) {
+    showFeatureBanner("保存失败：" + (err && err.message ? err.message : err), true);
+  } finally {
+    els.fBtnSave.disabled = false;
+    els.fBtnSave.textContent = "保存设置";
+  }
+}
+
 (async function init() {
   try { await bridge.ready(); } catch (err) { /* bridge may already be ready */ }
   bindEvents();
-  await Promise.all([loadFilter(), loadGroups(), loadStatus(), loadOfficial()]);
+  await Promise.all([loadFilter(), loadGroups(), loadStatus(), loadOfficial(), loadFeature()]);
 })();
 </script>
 </body>

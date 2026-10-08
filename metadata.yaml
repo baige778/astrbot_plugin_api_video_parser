@@ -6,7 +6,7 @@ desc: |
   解析短视频/图集分享链接并发送直链内容，支持 27 个平台，每个平台可独立开关。
   自动获取视频/图集直链直接发送，视频已删除可自定义提示语。支持「/dy登陆」命令：抖音网页版扫码登录，登录后自动保存 Cookie，解决抖音解析风控问题。
 author: baige778
-version: 0.3.26
+version: 0.3.27
 support_platforms:
   - aiocqhttp
   - wecom

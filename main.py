@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.26
+AstrBot v4 短视频解析插件 v0.3.27
 """
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ import concurrent.futures
 import json
 import os
 import re
+import shutil
+import subprocess
 import time
 import traceback
 import urllib.error
@@ -76,6 +78,24 @@ def get_platform_for_url(url: str) -> Optional[str]:
         if re.search(domain_pattern, url):
             return platform_key
     return None
+
+
+def _is_bilibili_video_url(url: str) -> bool:
+    """检查是否为B站视频链接（/video/BVxxx 或 /video/avxxx 或 b23.tv 短链）"""
+    if "b23.tv" in url:
+        return True
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+    if "bilibili.com" not in parsed.netloc:
+        return False
+    path = parsed.path.strip("/")
+    parts = path.split("/")
+    if len(parts) >= 2 and parts[0] == "video":
+        return parts[1].startswith("BV") or parts[1].startswith("av")
+    return False
 
 def is_platform_enabled(config: AstrBotConfig, platform_key: str) -> bool:
     """检查某个平台是否在配置中开启。"""
@@ -157,6 +177,9 @@ GROUP_FILTER_FILENAME = "group_filter.json"
 
 # QQ 官方机器人独立设置配置文件（存放于插件数据目录）
 QQ_OFFICIAL_SETTINGS_FILENAME = "qq_official_settings.json"
+
+# 功能设置配置文件（存放于插件数据目录）
+FEATURE_SETTINGS_FILENAME = "feature_settings.json"
 
 # QQ 官方机器人平台名（官方 API 不支持合并转发，走独立逐条发送逻辑）
 QQ_OFFICIAL_PLATFORM_NAMES = {"qq_official", "qq_official_webhook"}
@@ -512,6 +535,7 @@ class VideoParserPlugin(Star):
         self._group_filter = self._load_group_filter()
         # QQ 官方机器人独立设置（本地 JSON，Plugin Page 读写）
         self._qq_official = self._load_qq_official_settings()
+        self._feature_settings = self._load_feature_settings()
         self._register_web_apis()
 
         # 打印已启用的平台
@@ -520,7 +544,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.26 initialized: "
+            f"video_parser v0.3.27 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
@@ -554,6 +578,10 @@ class VideoParserPlugin(Star):
             logger.info(
                 f"video_parser platform '{platform_name}' is disabled, skipping: {share_url}"
             )
+            return
+
+        if platform_key == "bilibili" and not _is_bilibili_video_url(share_url):
+            logger.info(f"video_parser skip non-video bilibili url: {share_url}")
             return
 
         # QQ 官方机器人走独立发送逻辑（官方 API 不支持合并转发），
@@ -829,6 +857,124 @@ class VideoParserPlugin(Star):
             logger.error(f"video_parser save qq official settings failed: {exc}")
             return False
 
+    # ---- 功能设置 ----
+
+    @staticmethod
+    def _default_feature_settings() -> Dict[str, Any]:
+        return {"ffmpeg_enabled": True}
+
+    def _feature_settings_path(self) -> Path:
+        return self._group_filter_data_dir() / FEATURE_SETTINGS_FILENAME
+
+    def _load_feature_settings(self) -> Dict[str, Any]:
+        cfg = self._default_feature_settings()
+        try:
+            raw = json.loads(self._feature_settings_path().read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                for key in cfg:
+                    cfg[key] = bool(raw.get(key, cfg[key]))
+        except Exception as exc:
+            logger.warning(f"video_parser load feature settings failed: {exc}")
+        return cfg
+
+    def _save_feature_settings(self, cfg: Dict[str, Any]) -> bool:
+        try:
+            self._feature_settings_path().write_text(
+                json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            self._feature_settings = cfg
+            return True
+        except Exception as exc:
+            logger.error(f"video_parser save feature settings failed: {exc}")
+            return False
+
+    # ---- ffmpeg 压缩 ----
+
+    @staticmethod
+    def _ffmpeg_available() -> bool:
+        return shutil.which("ffmpeg") is not None
+
+    def _ffmpeg_compress_video(self, input_path: str, max_bytes: int) -> str:
+        output_path = input_path + ".compressed.mp4"
+        try:
+            probe = subprocess.run(
+                ["ffprobe", "-v", "quiet", "-print_format", "json",
+                 "-show_format", input_path],
+                capture_output=True, text=True, timeout=30,
+            )
+            if probe.returncode != 0:
+                logger.warning(f"video_parser ffprobe failed: {probe.stderr.strip()}")
+                return input_path
+            duration = float(json.loads(probe.stdout).get("format", {}).get("duration", 0) or 0)
+            if duration <= 0:
+                logger.warning("video_parser ffprobe duration is 0")
+                return input_path
+
+            target_bitrate_bps = (max_bytes * 8) / duration * 0.95
+            target_kbps = max(128, int(target_bitrate_bps / 1000))
+            logger.info(f"video_parser ffmpeg compress: input={os.path.basename(input_path)} "
+                        f"size={os.path.getsize(input_path)} bytes, target<={max_bytes} "
+                        f"bytes, target_bitrate={target_kbps}kbps, duration={duration:.1f}s")
+
+            cmd = [
+                "ffmpeg", "-y", "-i", input_path,
+                "-c:v", "libx264",
+                "-b:v", f"{target_kbps}k",
+                "-maxrate", f"{target_kbps}k",
+                "-bufsize", f"{target_kbps * 2}k",
+                "-c:a", "aac", "-b:a", "128k",
+                output_path,
+            ]
+            result = subprocess.run(cmd, capture_output=True, timeout=300)
+            if result.returncode == 0 and os.path.exists(output_path):
+                compressed_size = os.path.getsize(output_path)
+                if compressed_size > max_bytes:
+                    cmd2 = [
+                        "ffmpeg", "-y", "-i", input_path,
+                        "-c:v", "libx264",
+                        "-b:v", f"{target_kbps}k",
+                        "-maxrate", f"{target_kbps}k",
+                        "-bufsize", f"{target_kbps * 2}k",
+                        "-vf", "scale=-2:720",
+                        "-c:a", "aac", "-b:a", "128k",
+                        output_path,
+                    ]
+                    result2 = subprocess.run(cmd2, capture_output=True, timeout=300)
+                    if result2.returncode != 0:
+                        logger.warning(f"video_parser ffmpeg 720p fallback failed: {result2.stderr.strip()[-200:]}")
+                        try:
+                            os.remove(output_path)
+                        except OSError:
+                            pass
+                        return input_path
+                try:
+                    os.remove(input_path)
+                except OSError:
+                    pass
+                return output_path
+            logger.warning(f"video_parser ffmpeg compress failed: {result.stderr.strip()[-300:]}")
+        except subprocess.TimeoutExpired:
+            logger.warning("video_parser ffmpeg compress timeout")
+            try:
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+            except OSError:
+                pass
+        except Exception as exc:
+            logger.warning(f"video_parser ffmpeg compress error: {exc}")
+        return input_path
+
+    async def _try_ffmpeg_compress(self, tmp_path: str, threshold: int) -> str:
+        if not self._ffmpeg_available():
+            logger.info("video_parser ffmpeg not found, skipping compression")
+            return tmp_path
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, self._ffmpeg_compress_video, tmp_path, threshold
+        )
+        return result
+
+    
     async def _fetch_aiocqhttp_groups(self) -> List[Dict[str, str]]:
         """通过 aiocqhttp 平台适配器调用 OneBot get_group_list 拉取群列表。"""
         groups: List[Dict[str, str]] = []
@@ -912,6 +1058,18 @@ class VideoParserPlugin(Star):
                 ["POST"],
                 "保存QQ官方机器人独立设置",
             ),
+            (
+                "/astrbot_plugin_api_video_parser/feature_settings",
+                self._web_feature_get,
+                ["GET"],
+                "读取功能设置",
+            ),
+            (
+                "/astrbot_plugin_api_video_parser/feature_settings/save",
+                self._web_feature_save,
+                ["POST"],
+                "保存功能设置",
+            ),
         ):
             try:
                 ctx.register_web_api(route, handler, methods, desc)
@@ -978,6 +1136,24 @@ class VideoParserPlugin(Star):
         for key in cfg:
             cfg[key] = bool(payload.get(key, cfg[key]))
         if not self._save_qq_official_settings(cfg):
+            return error_response("save failed", status_code=500)
+        return json_response({"saved": True})
+
+    async def _web_feature_get(self):
+        from astrbot.api.web import json_response
+
+        return json_response(self._feature_settings)
+
+    async def _web_feature_save(self):
+        from astrbot.api.web import error_response, json_response, request
+
+        payload = await request.json(default={})
+        if not isinstance(payload, dict):
+            return error_response("invalid payload", status_code=400)
+        cfg = self._default_feature_settings()
+        for key in cfg:
+            cfg[key] = bool(payload.get(key, cfg[key]))
+        if not self._save_feature_settings(cfg):
             return error_response("save failed", status_code=500)
         return json_response({"saved": True})
 
@@ -1170,13 +1346,6 @@ class VideoParserPlugin(Star):
             return
 
         threshold = self.video_max_size_mb * 1024 * 1024
-        if file_size > threshold:
-            yield event.plain_result(
-                f"视频大小为 {file_size / (1024 * 1024):.2f}MB，"
-                f"超过 {self.video_max_size_mb}MB 限制，请尝试点击源链接观看。"
-            )
-            return
-
         # 带 Referer 下载视频到本地临时文件，避免 napcat 直连抖音 CDN 触发 403 防盗链
         loop = asyncio.get_running_loop()
         temp_dir = _get_video_temp_dir()
@@ -1226,6 +1395,17 @@ class VideoParserPlugin(Star):
 
         if cover_task is not None:
             cover_segment = await cover_task
+
+        if downloaded > threshold and self._feature_settings.get("ffmpeg_enabled"):
+            tmp_path = await self._try_ffmpeg_compress(tmp_path, threshold)
+            downloaded = os.path.getsize(tmp_path)
+            if downloaded > threshold:
+                yield event.plain_result(
+                    f"视频大小为 {downloaded / (1024 * 1024):.2f}MB，"
+                    f"超过 {self.video_max_size_mb}MB 限制，请尝试点击源链接观看。"
+                )
+                asyncio.create_task(_delayed_remove(tmp_path))
+                return
 
         title = str(data.get("title") or "").strip()
         author = str(ensure_dict(data.get("author")).get("name") or "").strip()
@@ -1285,13 +1465,6 @@ class VideoParserPlugin(Star):
             return
 
         threshold = self.video_max_size_mb * 1024 * 1024
-        if file_size > threshold:
-            yield event.plain_result(
-                f"视频大小为 {file_size / (1024 * 1024):.2f}MB，"
-                f"超过 {self.video_max_size_mb}MB 限制，请尝试点击源链接观看。"
-            )
-            return
-
         loop = asyncio.get_running_loop()
         temp_dir = _get_video_temp_dir()
         _cleanup_stale_videos(temp_dir)
@@ -1333,6 +1506,17 @@ class VideoParserPlugin(Star):
                 pass
             yield event.plain_result("视频下载失败，无法直接发送，请尝试点击源链接观看。")
             return
+
+        if downloaded > threshold:
+            tmp_path = await self._try_ffmpeg_compress(tmp_path, threshold)
+            downloaded = os.path.getsize(tmp_path)
+            if downloaded > threshold:
+                yield event.plain_result(
+                    f"视频大小为 {downloaded / (1024 * 1024):.2f}MB，"
+                    f"超过 {self.video_max_size_mb}MB 限制，请尝试点击源链接观看。"
+                )
+                asyncio.create_task(_delayed_remove(tmp_path))
+                return
 
         if cfg.get("send_title", True):
             title = str(data.get("title") or "").strip()

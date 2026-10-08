@@ -23,6 +23,12 @@
     "default": 30000,
     "hint": "解析视频/图集链接的超时时间。抖音风控触发兜底解析较慢（可达20-60秒），建议设为30000。"
   },
+  "douyin_api_fallback": {
+    "type": "bool",
+    "description": "抖音直连兜底解析",
+    "default": true,
+    "hint": "后端解析抖音失败（风控/宕机）时，插件直接请求抖音原生接口完成解析，无需重启后端。关闭后完全依赖后端。"
+  },
   "send_cover": {
     "type": "bool",
     "description": "发送视频封面图",
