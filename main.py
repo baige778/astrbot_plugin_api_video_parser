@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.27
+AstrBot v4 短视频解析插件 v0.3.28
 """
 from __future__ import annotations
 
@@ -270,7 +270,30 @@ def regexp_match_url_from_string(text: str) -> Optional[str]:
 def extract_url_from_event_text(event: AstrMessageEvent) -> Optional[str]:
     return regexp_match_url_from_string(event.get_message_str() or "")
 
+def _is_reply_or_quote_event(event: AstrMessageEvent) -> bool:
+    """检测消息是否包含引用/回复段（QQ reply / forward 等）。"""
+    for attr in ("message_chain", "messages", "message"):
+        chain = getattr(event, attr, None)
+        if isinstance(chain, list):
+            for seg in chain:
+                seg_type = ""
+                if isinstance(seg, dict):
+                    seg_type = seg.get("type", "")
+                elif hasattr(seg, "type"):
+                    seg_type = str(getattr(seg, "type", ""))
+                if seg_type in ("reply", "quote", "forward"):
+                    return True
+    # 检查 event 是否有 reply 相关属性
+    for attr in ("reply", "reply_id", "quote_message"):
+        if getattr(event, attr, None):
+            return True
+    return False
+
 def extract_url_from_json_segments(event: AstrMessageEvent) -> Optional[str]:
+    # 如果是引用/回复消息，只搜索当前消息的纯文本，不搜索引用消息内容
+    if _is_reply_or_quote_event(event):
+        return regexp_match_url_from_string(event.get_message_str() or "")
+
     candidates: List[str] = []
     msg_obj = getattr(event, "message_obj", None)
     if msg_obj is not None:
@@ -544,7 +567,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.27 initialized: "
+            f"video_parser v0.3.28 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
