@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AstrBot v4 短视频解析插件 v0.3.28
+AstrBot v4 短视频解析插件 v0.3.29
 """
 from __future__ import annotations
 
@@ -59,23 +59,35 @@ PLATFORM_CONFIGS: List[Tuple[str, str, List[str]]] = [
 ]
 
 # 构建综合正则（用于从消息中提取分享链接）
+# 域名前后加边界断言，避免 "t.contact.lua"、"amritabot.com" 这类文本
+# 因包含 "t.co" 子串而被误提取成 https://t.com/ 的假链接
 _ALL_DOMAIN_PATTERNS = "|".join(
     domain for _, _, domains in PLATFORM_CONFIGS for domain in domains
 )
 VIDEO_SHARE_URL_REGEX = re.compile(
-    rf"(https?://)?({_ALL_DOMAIN_PATTERNS})(\S*)"
+    rf"(?<![\w.-])(https?://)?({_ALL_DOMAIN_PATTERNS})(?![\w.-])(\S*)"
 )
 
-# 构建域名 → 平台键名的快速查找表
+# 构建域名（字面量） → 平台键名的快速查找表
+# 键为还原转义后的字面域名（如 "www\.bilibili\.com" -> "www.bilibili.com"）
 _DOMAIN_TO_PLATFORM: Dict[str, str] = {}
 for _key, _name, _domains in PLATFORM_CONFIGS:
     for _domain in _domains:
-        _DOMAIN_TO_PLATFORM[_domain] = _key
+        _DOMAIN_TO_PLATFORM[_domain.replace("\\.", ".")] = _key
 
 def get_platform_for_url(url: str) -> Optional[str]:
-    """根据 URL 判断属于哪个平台，返回平台配置键名。"""
-    for domain_pattern, platform_key in _DOMAIN_TO_PLATFORM.items():
-        if re.search(domain_pattern, url):
+    """根据 URL 主机名判断属于哪个平台（精确主机名匹配，避免子串误判）。"""
+    from urllib.parse import urlparse
+    try:
+        host = urlparse(url).netloc
+    except Exception:
+        return None
+    # 去掉 userinfo 与端口，取纯主机名
+    host = host.rsplit("@", 1)[-1].split(":")[0].strip().rstrip(".").lower()
+    if not host:
+        return None
+    for domain, platform_key in _DOMAIN_TO_PLATFORM.items():
+        if host == domain or host.endswith("." + domain):
             return platform_key
     return None
 
@@ -96,6 +108,28 @@ def _is_bilibili_video_url(url: str) -> bool:
     if len(parts) >= 2 and parts[0] == "video":
         return parts[1].startswith("BV") or parts[1].startswith("av")
     return False
+
+
+_TWITTER_STATUS_PATH_REGEX = re.compile(r"^/(i|[\w.-]+)/status/\d+")
+
+def _is_twitter_video_url(url: str) -> bool:
+    """检查是否为可解析的推特链接：x.com/twitter.com 的 /用户/status/数字
+    （含无用户名的 /i/status/ 形式），或主机本身就是 t.co 的短链。"""
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+    host = parsed.netloc.rsplit("@", 1)[-1].split(":")[0].strip().rstrip(".").lower()
+    if host == "t.co" or host.endswith(".t.co"):
+        return True
+    is_twitter_host = (
+        host == "x.com" or host.endswith(".x.com")
+        or host == "twitter.com" or host.endswith(".twitter.com")
+    )
+    if not is_twitter_host:
+        return False
+    return bool(_TWITTER_STATUS_PATH_REGEX.match(parsed.path or "/"))
 
 def is_platform_enabled(config: AstrBotConfig, platform_key: str) -> bool:
     """检查某个平台是否在配置中开启。"""
@@ -287,6 +321,29 @@ def _is_reply_or_quote_event(event: AstrMessageEvent) -> bool:
     for attr in ("reply", "reply_id", "quote_message"):
         if getattr(event, attr, None):
             return True
+    return False
+
+def _is_forward_event(event: AstrMessageEvent) -> bool:
+    """检测是否为合并转发消息（群聊的聊天记录）。
+
+    转发节点内含他人历史消息/已解析链接，整体跳过避免二次解析刷屏。"""
+    if str(getattr(event, "message_type", "") or "").lower() in ("forward", "node"):
+        return True
+    if getattr(event, "node_list", None):
+        return True
+    for attr in ("message_chain", "messages", "message"):
+        chain = getattr(event, attr, None)
+        if isinstance(chain, list):
+            for seg in chain:
+                if isinstance(seg, (Nodes, Node)):
+                    return True
+                seg_type = ""
+                if isinstance(seg, dict):
+                    seg_type = str(seg.get("type", ""))
+                elif hasattr(seg, "type"):
+                    seg_type = str(getattr(seg, "type", ""))
+                if seg_type.lower() in ("node", "nodes", "forward", "node_list"):
+                    return True
     return False
 
 def extract_url_from_json_segments(event: AstrMessageEvent) -> Optional[str]:
@@ -567,7 +624,7 @@ class VideoParserPlugin(Star):
             if is_platform_enabled(self.config, key)
         ]
         logger.info(
-            f"video_parser v0.3.28 initialized: "
+            f"video_parser v0.3.29 initialized: "
             f"api={self.parser_api_base_url} "
             f"max_size={self.video_max_size_mb}MB "
             f"login_poll_timeout={self.douyin_login_poll_timeout}s "
@@ -578,6 +635,11 @@ class VideoParserPlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_message(self, event: AstrMessageEvent):
+        # 合并转发消息（群聊的聊天记录）整体跳过，避免对转发体内的链接二次解析
+        if _is_forward_event(event):
+            logger.info("video_parser skip merged-forward message")
+            return
+
         share_url = extract_url_from_event_text(event)
         if share_url is None:
             share_url = extract_url_from_json_segments(event)
@@ -605,6 +667,10 @@ class VideoParserPlugin(Star):
 
         if platform_key == "bilibili" and not _is_bilibili_video_url(share_url):
             logger.info(f"video_parser skip non-video bilibili url: {share_url}")
+            return
+
+        if platform_key == "twitter" and not _is_twitter_video_url(share_url):
+            logger.info(f"video_parser skip non-status twitter url: {share_url}")
             return
 
         # QQ 官方机器人走独立发送逻辑（官方 API 不支持合并转发），
